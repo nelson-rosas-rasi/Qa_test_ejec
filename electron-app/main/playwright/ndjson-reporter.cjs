@@ -4,7 +4,10 @@ const SENTINEL = '@@QATR@@';
 
 /** Quita los códigos de color ANSI que Playwright mete en los mensajes de error. */
 function plain(text) {
-  return String(text).replace(/\[[0-9;]*m/g, '');
+  // La secuencia ANSI completa incluye el byte ESC (\x1b); sin él quedarían
+  // caracteres de control invisibles en la consola.
+  // eslint-disable-next-line no-control-regex
+  return String(text).replace(/\x1b\[[0-9;]*m/g, '');
 }
 
 class NdjsonReporter {
@@ -59,3 +62,4 @@ class NdjsonReporter {
 }
 
 module.exports = NdjsonReporter;
+module.exports.plain = plain;
