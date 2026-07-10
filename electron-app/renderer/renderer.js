@@ -20,6 +20,9 @@ const state = {
   screen: 'dashboard',
   project: 'erp',
   projectMenuOpen: false,
+  profiles: [],
+  profile: null,
+  profileMenuOpen: false,
   updateAvailable: true,
   testTree: [],
   selected: new Set(),
@@ -48,6 +51,7 @@ async function init() {
   wireTitlebar();
   wireSidebar();
   await loadProject(state.project);
+  await loadProfiles();
   const sync = await api.checkSyncStatus();
   state.updateAvailable = sync.updateAvailable;
   renderSidebarStatus();
@@ -101,6 +105,11 @@ function wireSidebar() {
     };
   });
 
+  document.getElementById('profile-trigger').onclick = () => {
+    state.profileMenuOpen = !state.profileMenuOpen;
+    renderProfileSwitcher();
+  };
+
   renderProjectSwitcher();
 }
 
@@ -129,6 +138,7 @@ function renderProjectSwitcher() {
       state.projectMenuOpen = false;
       renderProjectSwitcher();
       await loadProject(proj.id);
+      await loadProfiles();
       renderScreen();
     };
     menu.appendChild(row);
@@ -137,6 +147,51 @@ function renderProjectSwitcher() {
 
 function checkSvg(color) {
   return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
+}
+
+function initials(name) {
+  const parts = name.trim().split(/\s+/).slice(0, 2);
+  return parts.map((p) => p[0]).join('').toUpperCase() || '··';
+}
+
+async function loadProfiles() {
+  state.profiles = await api.listProfiles(state.project);
+  state.profile = await api.getActiveProfile(state.project);
+  if (!state.profile && state.profiles.length > 0) {
+    state.profile = state.profiles[0].id;
+    await api.selectProfile(state.project, state.profile);
+  }
+  renderProfileSwitcher();
+}
+
+function renderProfileSwitcher() {
+  const active = state.profiles.find((p) => p.id === state.profile);
+  document.getElementById('profile-avatar').textContent = active ? initials(active.name) : '··';
+  document.getElementById('profile-name').textContent = active ? active.name : 'Sin perfil';
+  document.getElementById('profile-role').textContent = active ? active.role : 'Elige un perfil';
+
+  const menu = document.getElementById('profile-menu');
+  menu.hidden = !state.profileMenuOpen;
+  menu.innerHTML = '';
+  state.profiles.forEach((profile) => {
+    const row = document.createElement('div');
+    row.className = 'profile-menu-item';
+    row.innerHTML = `
+      <div style="flex:1;min-width:0;">
+        <div class="label">${profile.name}</div>
+        <div class="sub">${profile.role}</div>
+      </div>
+      ${profile.id === state.profile ? checkSvg('#2563eb') : ''}
+    `;
+    row.onclick = async (e) => {
+      e.stopPropagation();
+      state.profile = profile.id;
+      state.profileMenuOpen = false;
+      await api.selectProfile(state.project, profile.id);
+      renderProfileSwitcher();
+    };
+    menu.appendChild(row);
+  });
 }
 
 function renderSidebarStatus() {
@@ -487,7 +542,9 @@ async function startRun() {
   renderLive();
 
   const result = await api.startRun({
+    projectId: state.project,
     testIds: ids,
+    runAll: state.runTarget === 'all',
     visualMode: state.runOptions.visualMode,
     generateReport: state.runOptions.generateReport,
     stopOnFail: state.runOptions.stopOnFail,
@@ -847,6 +904,14 @@ function createBrowserStub() {
       return { ok: true };
     },
     onUpdateProgress(cb) { listeners.progress.push(cb); },
+    async listProfiles() {
+      return [
+        { id: 'demo', name: 'María Gómez', role: 'QA Lead' },
+        { id: 'otro', name: 'Julián Ríos', role: 'QA Tester' },
+      ];
+    },
+    async getActiveProfile() { return 'demo'; },
+    async selectProfile(_projectId, profileId) { return profileId; },
     async startRun({ testIds }) {
       for (const id of testIds) {
         listeners.result.forEach((cb) => cb({ id, status: 'running' }));
