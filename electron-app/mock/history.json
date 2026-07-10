@@ -1,0 +1,7 @@
+[
+  { "date": "2026-07-08T10:45:00", "user": "María Gómez", "count": 30, "result": "failed", "failedCount": 4, "docPath": "/reportes/Reporte-Checkout-E2E-2026-07-08.docx" },
+  { "date": "2026-07-07T16:20:00", "user": "Julián Ríos", "count": 30, "result": "passed", "docPath": "/reportes/Reporte-Checkout-E2E-2026-07-07-b.docx" },
+  { "date": "2026-07-07T09:12:00", "user": "María Gómez", "count": 12, "result": "failed", "failedCount": 1, "docPath": "/reportes/Reporte-Checkout-E2E-2026-07-07-a.docx" },
+  { "date": "2026-07-04T14:03:00", "user": "Julián Ríos", "count": 30, "result": "passed", "docPath": "/reportes/Reporte-Checkout-E2E-2026-07-04.docx" },
+  { "date": "2026-07-02T11:30:00", "user": "Carla Torres", "count": 18, "result": "passed", "docPath": "/reportes/Reporte-Checkout-E2E-2026-07-02.docx" }
+]

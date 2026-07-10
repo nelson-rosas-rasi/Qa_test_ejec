@@ -1,0 +1,868 @@
+/* ============================================================
+   QA Test Runner — renderer process
+   Toda la lógica de UI vive aquí. Los datos vienen de `window.qa`
+   (expuesto por preload.js). Si no existe (ej. abriendo este HTML
+   directo en un navegador para revisar el diseño), se usa un stub
+   con datos de ejemplo para que la interfaz siga siendo navegable.
+   ============================================================ */
+
+// No puede llamarse `qa`: contextBridge define window.qa como propiedad no
+// configurable, y un `const qa` global colisiona con ella (SyntaxError).
+const api = window.qa || createBrowserStub();
+
+const PROJECTS = [
+  { id: 'erp', name: 'ERP', suite: 'Checkout E2E', color: '#2563eb' },
+  { id: 'medical', name: 'Medical', suite: 'Historial Clínico', color: '#0d9488' },
+  { id: 'finance', name: 'Finanzas', suite: 'Facturación', color: '#9333ea' },
+];
+
+const state = {
+  screen: 'dashboard',
+  project: 'erp',
+  projectMenuOpen: false,
+  updateAvailable: true,
+  testTree: [],
+  selected: new Set(),
+  expandedSuites: new Set(),
+  runOptions: { visualMode: false, generateReport: true, stopOnFail: false },
+  showRunOptionsModal: false,
+  runTarget: 'selected', // 'selected' | 'all'
+  showUpdateModal: false,
+  updating: false,
+  updateProgress: 0,
+  runLog: [],
+  runResults: {}, // testId -> 'running' | 'passed' | 'failed'
+  runOrder: [],
+  running: false,
+  expandedFail: null,
+  history: [],
+};
+
+const $main = document.getElementById('main');
+const $overlay = document.getElementById('modal-overlay');
+
+/* ---------- boot ---------- */
+init();
+
+async function init() {
+  wireTitlebar();
+  wireSidebar();
+  await loadProject(state.project);
+  const sync = await api.checkSyncStatus();
+  state.updateAvailable = sync.updateAvailable;
+  renderSidebarStatus();
+  api.onUpdateProgress((pct) => {
+    state.updateProgress = pct;
+    if (state.showUpdateModal) renderUpdateModal();
+  });
+  api.onRunLog((entry) => {
+    state.runLog.push(entry);
+    if (state.screen === 'live') renderConsoleAppend(entry);
+  });
+  api.onTestResult((entry) => {
+    state.runResults[entry.id] = entry.status;
+    if (state.screen === 'live') renderLive();
+  });
+  renderScreen();
+}
+
+async function loadProject(projectId) {
+  state.testTree = await api.getTestTree(projectId);
+  state.selected = new Set();
+  state.expandedSuites = new Set(state.testTree.map((s) => s.id));
+  state.history = await api.getHistory();
+}
+
+/* ============================================================
+   TITLEBAR
+   ============================================================ */
+function wireTitlebar() {
+  document.getElementById('btn-min').onclick = () => api.windowMinimize();
+  document.getElementById('btn-max').onclick = () => api.windowMaximize();
+  document.getElementById('btn-close').onclick = () => api.windowClose();
+}
+
+/* ============================================================
+   SIDEBAR
+   ============================================================ */
+function wireSidebar() {
+  const trigger = document.getElementById('project-trigger');
+  trigger.onclick = () => {
+    state.projectMenuOpen = !state.projectMenuOpen;
+    renderProjectSwitcher();
+  };
+
+  document.querySelectorAll('.nav-item').forEach((el) => {
+    el.onclick = () => {
+      document.querySelectorAll('.nav-item').forEach((n) => n.classList.remove('active'));
+      el.classList.add('active');
+      state.screen = el.dataset.screen;
+      renderScreen();
+    };
+  });
+
+  renderProjectSwitcher();
+}
+
+function renderProjectSwitcher() {
+  const p = PROJECTS.find((x) => x.id === state.project);
+  document.getElementById('project-dot').style.background = p.color;
+  document.getElementById('project-name').textContent = p.name;
+  document.getElementById('project-suite').textContent = p.suite;
+  const chev = document.getElementById('project-chev').firstElementChild;
+  chev.parentElement.classList.toggle('open', state.projectMenuOpen);
+
+  const menu = document.getElementById('project-menu');
+  menu.hidden = !state.projectMenuOpen;
+  menu.innerHTML = '';
+  PROJECTS.forEach((proj) => {
+    const row = document.createElement('div');
+    row.className = 'project-menu-item';
+    row.innerHTML = `
+      <span class="dot" style="background:${proj.color}"></span>
+      <span class="label">${proj.name}</span>
+      ${proj.id === state.project ? checkSvg(proj.color) : ''}
+    `;
+    row.onclick = async (e) => {
+      e.stopPropagation();
+      state.project = proj.id;
+      state.projectMenuOpen = false;
+      renderProjectSwitcher();
+      await loadProject(proj.id);
+      renderScreen();
+    };
+    menu.appendChild(row);
+  });
+}
+
+function checkSvg(color) {
+  return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
+}
+
+function renderSidebarStatus() {
+  const el = document.getElementById('sync-pill');
+  if (state.updateAvailable) {
+    el.className = 'sync-pill update';
+    el.innerHTML = `<span class="bullet"></span><span class="txt">Actualización disponible</span>`;
+    el.onclick = () => openUpdateModal();
+  } else {
+    el.className = 'sync-pill ok';
+    el.innerHTML = `
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+      <span class="txt">Pruebas actualizadas</span>`;
+    el.onclick = null;
+  }
+}
+
+/* ============================================================
+   SCREEN ROUTER
+   ============================================================ */
+function renderScreen() {
+  if (state.screen === 'dashboard') renderDashboard();
+  else if (state.screen === 'live') renderLive();
+  else if (state.screen === 'results') renderResults();
+  else if (state.screen === 'history') renderHistory();
+}
+
+/* ============================================================
+   DASHBOARD
+   ============================================================ */
+function renderDashboard() {
+  const project = PROJECTS.find((p) => p.id === state.project);
+  const totalTests = countAllTests();
+  const selectedCount = state.selected.size;
+  const totalSuites = state.testTree.length;
+
+  $main.innerHTML = `
+    <div class="screen">
+      <div class="screen-header">
+        <div class="row">
+          <div>
+            <div class="screen-title">Pruebas</div>
+            <div class="screen-subtitle">
+              <span class="badge" style="color:${project.color};background:${project.color}18;border:1px solid ${project.color}55;">
+                <span class="bdot" style="background:${project.color}"></span>${project.name}
+              </span>
+              <span style="font-weight:500;">${project.suite}</span>
+              <span style="color:#cbd5e1;">·</span>
+              <span style="display:inline-flex;align-items:center;gap:4px;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>rama principal
+              </span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex:none;flex-wrap:wrap;justify-content:flex-end;">
+            ${state.updateAvailable ? `
+              <div style="display:flex;align-items:center;gap:12px;padding:8px 8px 8px 14px;border-radius:10px;background:var(--accent-light);border:1px solid var(--accent-border);white-space:nowrap;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6"/><path d="m8 6 4-4 4 4"/><path d="M3 12a9 9 0 0 0 9 9 9 9 0 0 0 9-9"/></svg>
+                  <span style="font-size:12.5px;font-weight:600;color:#1d4ed8;">Actualización disponible</span>
+                </div>
+                <button class="btn btn-primary" id="btn-update-now" style="padding:7px 13px;font-size:12.5px;">Actualizar</button>
+              </div>` : `
+              <div style="display:flex;align-items:center;gap:8px;padding:9px 14px;border-radius:10px;background:var(--green-light);border:1px solid var(--green-border);white-space:nowrap;">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                <div style="line-height:1.15;"><div style="font-size:12.5px;font-weight:600;color:#15803d;">Actualizado</div><div style="font-size:10.5px;color:#5aa877;">Sincronizado hace 5 min</div></div>
+              </div>`}
+            <div style="display:flex;align-items:center;gap:7px;padding:5px 11px 5px 5px;border-radius:20px;background:#f8fafc;border:1px solid #eef2f7;white-space:nowrap;">
+              <div class="avatar" style="width:24px;height:24px;font-size:9.5px;">MG</div>
+              <span style="font-size:12px;font-weight:600;color:#334155;">María</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="action-bar">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <button class="btn btn-primary" id="btn-run-selected">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="m7 4 12 8-12 8V4z"/></svg>
+              Ejecutar seleccionados <span class="btn-count">${selectedCount}</span>
+            </button>
+            <button class="btn btn-secondary" id="btn-run-all">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 4 12 8-12 8V4z"/></svg>
+              Ejecutar todos
+            </button>
+          </div>
+          <div class="search-box">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            <input placeholder="Buscar prueba…" id="search-input">
+          </div>
+        </div>
+      </div>
+
+      <div class="counters-bar">
+        <span style="color:#64748b;white-space:nowrap;"><b style="color:#0f172a;font-weight:700;">${totalTests}</b> pruebas en total</span>
+        <span style="color:#cbd5e1;">·</span>
+        <span class="sel"><span class="sq"></span>${selectedCount} seleccionadas</span>
+        <span style="color:#cbd5e1;">·</span>
+        <span style="color:#94a3b8;">${totalSuites} suites</span>
+      </div>
+
+      <div class="tree" id="tree"></div>
+    </div>
+  `;
+
+  renderTree();
+
+  document.getElementById('btn-update-now').onclick = openUpdateModal;
+  document.getElementById('btn-run-selected').onclick = () => openRunOptions('selected');
+  document.getElementById('btn-run-all').onclick = () => openRunOptions('all');
+  document.getElementById('search-input').oninput = (e) => filterTree(e.target.value);
+}
+
+function countAllTests() {
+  return state.testTree.reduce((n, s) => n + s.files.reduce((m, f) => m + f.tests.length, 0), 0);
+}
+
+function suiteSelectionState(suite) {
+  const ids = suite.files.flatMap((f) => f.tests.map((t) => t.id));
+  const selectedIds = ids.filter((id) => state.selected.has(id));
+  if (selectedIds.length === 0) return 'none';
+  if (selectedIds.length === ids.length) return 'all';
+  return 'partial';
+}
+function fileSelectionState(file) {
+  const ids = file.tests.map((t) => t.id);
+  const selectedIds = ids.filter((id) => state.selected.has(id));
+  if (selectedIds.length === 0) return 'none';
+  if (selectedIds.length === ids.length) return 'all';
+  return 'partial';
+}
+
+function renderTree() {
+  const $tree = document.getElementById('tree');
+  $tree.innerHTML = '';
+
+  state.testTree.forEach((suite) => {
+    const expanded = state.expandedSuites.has(suite.id);
+    const selState = suiteSelectionState(suite);
+    const fileCount = suite.files.length;
+    const testCount = suite.files.reduce((n, f) => n + f.tests.length, 0);
+    const selCount = suite.files.flatMap((f) => f.tests).filter((t) => state.selected.has(t.id)).length;
+
+    const suiteEl = document.createElement('div');
+    suiteEl.className = 'suite';
+    suiteEl.innerHTML = `
+      <div class="suite-header ${expanded ? '' : 'collapsed'}" data-suite="${suite.id}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(${expanded ? 0 : -90}deg)"><path d="m6 9 6 6 6-6"/></svg>
+        <span class="checkbox small ${selState === 'all' ? 'checked' : selState === 'partial' ? 'partial' : 'unchecked'}" data-suite-check="${suite.id}">
+          ${selState === 'all' ? checkSvg('#fff') : selState === 'partial' ? '<div style="width:9px;height:2px;background:#fff;border-radius:1px;"></div>' : ''}
+        </span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${selState === 'none' ? '#94a3b8' : '#2563eb'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+        <span class="suite-title">${suite.name}</span>
+        <span class="suite-meta">${fileCount} archivos · ${testCount} pruebas</span>
+        ${selCount > 0 ? `<span class="suite-count">${selCount} seleccionadas</span>` : ''}
+      </div>
+      <div class="suite-body" data-suite-body="${suite.id}" style="${expanded ? '' : 'display:none'}"></div>
+    `;
+    $tree.appendChild(suiteEl);
+
+    const body = suiteEl.querySelector(`[data-suite-body="${suite.id}"]`);
+    suite.files.forEach((file) => {
+      const fState = fileSelectionState(file);
+      const fileEl = document.createElement('div');
+      fileEl.className = 'file-row';
+      fileEl.innerHTML = `
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        <span class="checkbox small ${fState === 'all' ? 'checked' : fState === 'partial' ? 'partial' : 'unchecked'}" data-file-check="${file.id}">
+          ${fState === 'all' ? checkSvg('#fff') : fState === 'partial' ? '<div style="width:9px;height:2px;background:#fff;border-radius:1px;"></div>' : ''}
+        </span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/></svg>
+        <span class="file-name">${file.name}</span>
+        <span class="file-count">${file.tests.length} pruebas</span>
+      `;
+      body.appendChild(fileEl);
+
+      file.tests.forEach((test) => {
+        const checked = state.selected.has(test.id);
+        const testEl = document.createElement('div');
+        testEl.className = 'test-row';
+        testEl.innerHTML = `
+          <span class="checkbox small ${checked ? 'checked' : 'unchecked'}" data-test-check="${test.id}">
+            ${checked ? checkSvg('#fff') : ''}
+          </span>
+          <span class="test-name ${checked ? '' : 'dim'}">${test.name}</span>
+        `;
+        testEl.onclick = () => {
+          toggleTest(test.id);
+        };
+        body.appendChild(testEl);
+      });
+    });
+  });
+
+  // wire events
+  $tree.querySelectorAll('[data-suite]').forEach((el) => {
+    el.onclick = (e) => {
+      if (e.target.closest('[data-suite-check]')) return;
+      const id = el.dataset.suite;
+      if (state.expandedSuites.has(id)) state.expandedSuites.delete(id);
+      else state.expandedSuites.add(id);
+      renderTree();
+    };
+  });
+  $tree.querySelectorAll('[data-suite-check]').forEach((el) => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      const suite = state.testTree.find((s) => s.id === el.dataset.suiteCheck);
+      const allIds = suite.files.flatMap((f) => f.tests.map((t) => t.id));
+      const shouldSelect = suiteSelectionState(suite) !== 'all';
+      allIds.forEach((id) => (shouldSelect ? state.selected.add(id) : state.selected.delete(id)));
+      renderDashboard();
+    };
+  });
+  $tree.querySelectorAll('[data-file-check]').forEach((el) => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      const file = state.testTree.flatMap((s) => s.files).find((f) => f.id === el.dataset.fileCheck);
+      const ids = file.tests.map((t) => t.id);
+      const shouldSelect = fileSelectionState(file) !== 'all';
+      ids.forEach((id) => (shouldSelect ? state.selected.add(id) : state.selected.delete(id)));
+      renderDashboard();
+    };
+  });
+}
+
+function toggleTest(id) {
+  if (state.selected.has(id)) state.selected.delete(id);
+  else state.selected.add(id);
+  renderDashboard();
+}
+
+function filterTree(query) {
+  const q = query.trim().toLowerCase();
+  document.querySelectorAll('.test-row').forEach((row) => {
+    const name = row.querySelector('.test-name').textContent.toLowerCase();
+    row.style.display = !q || name.includes(q) ? '' : 'none';
+  });
+}
+
+/* ============================================================
+   RUN OPTIONS MODAL
+   ============================================================ */
+function openRunOptions(target) {
+  state.runTarget = target;
+  state.showRunOptionsModal = true;
+  renderRunOptionsModal();
+}
+
+function renderRunOptionsModal() {
+  const opts = state.runOptions;
+  const count = state.runTarget === 'all' ? countAllTests() : state.selected.size;
+  const label = state.runTarget === 'all'
+    ? `${countAllTests()} pruebas · ${PROJECTS.find(p => p.id === state.project).suite}`
+    : `${state.selected.size} pruebas seleccionadas`;
+
+  $overlay.hidden = false;
+  $overlay.innerHTML = `
+    <div class="modal" style="width:440px;">
+      <div class="modal-pad">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div class="modal-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="#2563eb"><path d="m7 4 12 8-12 8V4z"/></svg></div>
+          <div style="flex:1;min-width:0;">
+            <div class="modal-title" style="white-space:nowrap;">Opciones de ejecución</div>
+            <div class="modal-sub" style="margin-top:2px;">${label}</div>
+          </div>
+        </div>
+
+        <div style="margin-top:20px;">
+          ${optionRow('visualMode', opts.visualMode, 'Modo visual (ver navegador)',
+            opts.visualMode ? 'Verás el navegador abrirse durante la ejecución' : 'Las pruebas corren en segundo plano, sin ventanas',
+            eyeIcon(opts.visualMode))}
+          ${optionRow('generateReport', opts.generateReport, 'Generar reporte Word al finalizar',
+            'Se guarda automáticamente y queda en el historial',
+            docIcon())}
+          ${optionRow('stopOnFail', opts.stopOnFail, 'Detener en el primer fallo',
+            opts.stopOnFail ? 'La ejecución se detendrá en cuanto falle una prueba' : 'La ejecución continúa aunque alguna prueba falle',
+            stopIcon())}
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn btn-secondary" id="run-opts-cancel">Cancelar</button>
+          <button class="btn btn-primary" id="run-opts-confirm">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="m7 4 12 8-12 8V4z"/></svg>Iniciar ejecución
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  $overlay.querySelectorAll('[data-opt]').forEach((btn) => {
+    btn.onclick = () => {
+      const key = btn.dataset.opt;
+      state.runOptions[key] = !state.runOptions[key];
+      renderRunOptionsModal();
+    };
+  });
+  document.getElementById('run-opts-cancel').onclick = closeModal;
+  document.getElementById('run-opts-confirm').onclick = () => {
+    closeModal();
+    startRun();
+  };
+}
+
+function optionRow(key, on, title, hint, iconSvg) {
+  return `
+    <div class="option-row">
+      <button class="switch ${on ? 'on' : ''}" data-opt="${key}"><span class="switch-thumb"></span></button>
+      <span style="color:${on ? '#2563eb' : '#94a3b8'};display:inline-flex;">${iconSvg}</span>
+      <div style="flex:1;min-width:0;">
+        <div class="option-title">${title}</div>
+        <div class="option-hint">${hint}</div>
+      </div>
+    </div>
+  `;
+}
+function eyeIcon(open) {
+  return open
+    ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`
+    : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 11s3.5 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="2" y1="2" x2="22" y2="22"/></svg>`;
+}
+function docIcon() {
+  return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="M8 13h8M8 17h5"/></svg>`;
+}
+function stopIcon() {
+  return `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>`;
+}
+
+function closeModal() {
+  $overlay.hidden = true;
+  $overlay.innerHTML = '';
+}
+
+/* ============================================================
+   RUN — kick off + LIVE screen
+   ============================================================ */
+async function startRun() {
+  const ids = state.runTarget === 'all'
+    ? state.testTree.flatMap((s) => s.files).flatMap((f) => f.tests.map((t) => t.id))
+    : Array.from(state.selected);
+
+  state.runOrder = ids;
+  state.runResults = {};
+  ids.forEach((id) => (state.runResults[id] = 'pending'));
+  state.runLog = [];
+  state.running = true;
+
+  state.screen = 'live';
+  document.querySelectorAll('.nav-item').forEach((n) => n.classList.toggle('active', n.dataset.screen === 'live'));
+  renderLive();
+
+  const result = await api.startRun({
+    testIds: ids,
+    visualMode: state.runOptions.visualMode,
+    generateReport: state.runOptions.generateReport,
+    stopOnFail: state.runOptions.stopOnFail,
+  });
+  state.running = false;
+  if (state.runOptions.generateReport) {
+    await api.generateReport('run-' + Date.now());
+  }
+  if (state.screen === 'live') renderLive();
+}
+
+function testNameById(id) {
+  for (const s of state.testTree) {
+    for (const f of s.files) {
+      const t = f.tests.find((t) => t.id === id);
+      if (t) return t.name;
+    }
+  }
+  return id;
+}
+
+function renderLive() {
+  const ids = state.runOrder;
+  const done = ids.filter((id) => state.runResults[id] === 'passed' || state.runResults[id] === 'failed').length;
+  const pct = ids.length ? Math.round((done / ids.length) * 100) : 0;
+  const passCount = ids.filter((id) => state.runResults[id] === 'passed').length;
+  const failCount = ids.filter((id) => state.runResults[id] === 'failed').length;
+  const pendingCount = ids.length - done - ids.filter((id) => state.runResults[id] === 'running').length;
+
+  $main.innerHTML = `
+    <div class="screen">
+      <div class="screen-header">
+        <div class="row">
+          <div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div class="screen-title">Ejecución en vivo</div>
+              ${state.running ? `<span class="badge" style="color:#2563eb;background:var(--accent-light);"><span class="bdot" style="background:#2563eb;animation:qblink 1s infinite;"></span>En curso</span>` : ''}
+            </div>
+            <div class="screen-subtitle">${PROJECTS.find(p=>p.id===state.project).suite} · ${ids.length} pruebas seleccionadas</div>
+          </div>
+          <button class="btn btn-danger" id="btn-stop" ${state.running ? '' : 'disabled'}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>Detener ejecución
+          </button>
+        </div>
+        <div class="live-progress">
+          <div class="top">
+            <span style="font-size:12.5px;font-weight:600;color:#334155;white-space:nowrap;">${done} de ${ids.length} pruebas completadas</span>
+            <span style="font-size:12.5px;font-weight:700;color:var(--accent);">${pct}%</span>
+          </div>
+          <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
+          <div class="live-legend">
+            <span style="color:var(--green-dark);"><span class="lg-dot" style="background:var(--green);"></span>${passCount} exitosas</span>
+            <span style="color:var(--red-dark);"><span class="lg-dot" style="background:var(--red);"></span>${failCount} fallidas</span>
+            <span style="color:#94a3b8;"><span class="lg-dot" style="background:#cbd5e1;"></span>${Math.max(pendingCount,0)} pendientes</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="live-body">
+        <div class="test-list" id="test-list"></div>
+        <div class="console">
+          <div class="console-header">
+            <div class="title"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg>Consola de ejecución</div>
+            <span class="hint">auto-scroll activo</span>
+          </div>
+          <div class="console-body" id="console-body"></div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const $list = document.getElementById('test-list');
+  ids.forEach((id) => {
+    const status = state.runResults[id] || 'pending';
+    const row = document.createElement('div');
+    row.className = `test-list-item ${status === 'passed' ? 'pass' : status === 'failed' ? 'fail' : status === 'running' ? 'running' : ''}`;
+    row.innerHTML = `${statusIcon(status)}<span class="name">${testNameById(id)}</span>`;
+    $list.appendChild(row);
+  });
+
+  const $console = document.getElementById('console-body');
+  state.runLog.forEach((entry) => appendLogLine($console, entry));
+  $console.scrollTop = $console.scrollHeight;
+
+  document.getElementById('btn-stop').onclick = () => {
+    api.stopRun();
+    state.running = false;
+    renderLive();
+  };
+}
+
+function statusIcon(status) {
+  if (status === 'passed') return `<svg width="17" height="17" viewBox="0 0 24 24" fill="#dcfce7" stroke="#16a34a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>`;
+  if (status === 'failed') return `<svg width="17" height="17" viewBox="0 0 24 24" fill="#fee2e2" stroke="#dc2626" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg>`;
+  if (status === 'running') return `<svg class="spin" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`;
+  return `<span style="width:17px;height:17px;border-radius:50%;border:1.6px dashed #cbd5e1;flex:none;display:inline-block;"></span>`;
+}
+
+function renderConsoleAppend(entry) {
+  const $console = document.getElementById('console-body');
+  const $list = document.getElementById('test-list');
+  if (!$console) return;
+  appendLogLine($console, entry);
+  $console.scrollTop = $console.scrollHeight;
+  renderLive(); // simplest correct way to keep list/progress in sync
+}
+
+function appendLogLine($console, entry) {
+  const div = document.createElement('div');
+  div.className = `line ${entry.level}`;
+  div.textContent = (entry.level === 'fail' ? '✗ ' : entry.level === 'pass' ? '✓ ' : '') + entry.text;
+  $console.appendChild(div);
+}
+
+/* ============================================================
+   RESULTS
+   ============================================================ */
+function renderResults() {
+  const ids = state.runOrder.length ? state.runOrder : [];
+  const total = ids.length || 30;
+  const passed = ids.length ? ids.filter((id) => state.runResults[id] === 'passed').length : 26;
+  const failed = ids.length ? ids.filter((id) => state.runResults[id] === 'failed').length : 4;
+  const failedIds = ids.length ? ids.filter((id) => state.runResults[id] === 'failed') : ['t3', 't9', 't11', 't10'];
+
+  $main.innerHTML = `
+    <div class="screen">
+      <div class="screen-header" style="padding-bottom:16px;">
+        <div class="row">
+          <div>
+            <div class="screen-title">Resultado de ejecución</div>
+            <div class="screen-subtitle">${PROJECTS.find(p=>p.id===state.project).suite} · ${new Date().toLocaleString('es-CO', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })} · por María Gómez</div>
+          </div>
+          <div style="display:flex;gap:10px;">
+            <button class="btn btn-secondary">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>Abrir carpeta
+            </button>
+            <button class="btn btn-primary" id="btn-open-report">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="M8 13h8M8 17h5"/></svg>Ver reporte Word
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="results-body">
+        <div class="summary-cards">
+          <div class="card"><div class="card-label">Total</div><div class="card-value">${total}</div></div>
+          <div class="card green"><div class="card-label">${checkSvg('#16a34a')}Exitosos</div><div class="card-value">${passed}</div></div>
+          <div class="card red"><div class="card-label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>Fallidos</div><div class="card-value">${failed}</div></div>
+          <div class="card"><div class="card-label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>Duración</div><div class="card-value">3m 42s</div></div>
+        </div>
+
+        <div class="report-banner">
+          <div class="report-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="M8 13h8M8 17h5"/></svg></div>
+          <div style="flex:1;">
+            <div class="report-text-title">Reporte generado automáticamente</div>
+            <div class="report-text-sub">Reporte-${PROJECTS.find(p=>p.id===state.project).suite.replace(/\s+/g,'-')}-${new Date().toISOString().slice(0,10)}.docx · generado al finalizar la ejecución</div>
+          </div>
+          <button class="btn btn-primary" id="btn-open-doc">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6M10 14 21 3"/></svg>Abrir documento
+          </button>
+        </div>
+
+        <div class="section-title"><span class="bdot"></span>Pruebas fallidas (${failedIds.length})</div>
+        <div class="fail-list" id="fail-list"></div>
+      </div>
+    </div>
+  `;
+
+  const $failList = document.getElementById('fail-list');
+  const sampleErrors = {
+    default: 'AssertionError: el resultado no coincide con lo esperado',
+  };
+  failedIds.forEach((id, i) => {
+    const item = document.createElement('div');
+    item.className = 'fail-item';
+    item.innerHTML = `
+      <div class="fail-head" data-fail="${id}">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="#fee2e2" stroke="#dc2626" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg>
+        <div class="info"><div class="name">${testNameById(id)}</div><div class="meta">${i === 0 ? '2.1s' : (1.5 + i * 0.6).toFixed(1) + 's'}</div></div>
+        <span class="chev ${state.expandedFail === id ? 'open' : ''}"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
+      </div>
+      <div class="fail-detail" style="${state.expandedFail === id ? '' : 'display:none'}">
+        <div class="box"><div class="msg">${sampleErrors.default}</div></div>
+      </div>
+    `;
+    $failList.appendChild(item);
+  });
+  $failList.querySelectorAll('[data-fail]').forEach((el) => {
+    el.onclick = () => {
+      const id = el.dataset.fail;
+      state.expandedFail = state.expandedFail === id ? null : id;
+      renderResults();
+    };
+  });
+
+  const openDoc = () => api.generateReport('run-' + Date.now());
+  document.getElementById('btn-open-report').onclick = openDoc;
+  document.getElementById('btn-open-doc').onclick = openDoc;
+}
+
+/* ============================================================
+   HISTORY
+   ============================================================ */
+function renderHistory() {
+  $main.innerHTML = `
+    <div class="screen">
+      <div class="screen-header">
+        <div class="screen-title">Historial de ejecuciones</div>
+        <div class="filters-row">
+          <div class="filter-tabs">
+            <span class="filter-tab active" data-filter="all">Todos</span>
+            <span class="filter-tab" data-filter="passed">Exitosos</span>
+            <span class="filter-tab" data-filter="failed">Con fallos</span>
+          </div>
+          <div class="date-filter">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Últimos 30 días
+          </div>
+        </div>
+      </div>
+      <div class="history-body">
+        <div class="history-table" id="history-table"></div>
+      </div>
+    </div>
+  `;
+  renderHistoryTable('all');
+
+  document.querySelectorAll('.filter-tab').forEach((tab) => {
+    tab.onclick = () => {
+      document.querySelectorAll('.filter-tab').forEach((t) => t.classList.remove('active'));
+      tab.classList.add('active');
+      renderHistoryTable(tab.dataset.filter);
+    };
+  });
+}
+
+const AVATAR_COLORS = {
+  'María Gómez': 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+  'Julián Ríos': 'linear-gradient(135deg,#0ea5e9,#2563eb)',
+  'Carla Torres': 'linear-gradient(135deg,#f59e0b,#ea580c)',
+};
+function initials(name) {
+  return name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+}
+
+function renderHistoryTable(filter) {
+  const $table = document.getElementById('history-table');
+  const rows = state.history.filter((r) => filter === 'all' || r.result === filter);
+
+  $table.innerHTML = `
+    <div class="history-row head">
+      <span>Fecha</span><span>Usuario</span><span>Pruebas</span><span>Resultado</span><span style="text-align:right;">Reporte</span>
+    </div>
+  `;
+  rows.forEach((r) => {
+    const d = new Date(r.date);
+    const dateStr = d.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) + ' · ' + d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+    const row = document.createElement('div');
+    row.className = 'history-row';
+    row.innerHTML = `
+      <span class="history-date">${dateStr}</span>
+      <span class="history-user"><span class="mini-avatar" style="background:${AVATAR_COLORS[r.user] || '#94a3b8'}">${initials(r.user)}</span>${r.user}</span>
+      <span class="history-count">${r.count}</span>
+      <span>${r.result === 'passed'
+        ? `<span class="badge" style="color:var(--green-dark);background:var(--green-light);border:1px solid var(--green-border);">Todas pasaron</span>`
+        : `<span class="badge" style="color:var(--red-dark);background:var(--red-light);border:1px solid var(--red-border);">${r.failedCount} fallida${r.failedCount === 1 ? '' : 's'}</span>`}</span>
+      <span class="history-doc"><a href="#" data-doc="${r.docPath}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/></svg>.docx</a></span>
+    `;
+    $table.appendChild(row);
+  });
+
+  $table.querySelectorAll('[data-doc]').forEach((a) => {
+    a.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      api.generateReport(a.dataset.doc);
+    };
+  });
+}
+
+/* ============================================================
+   UPDATE MODAL
+   ============================================================ */
+function openUpdateModal() {
+  state.showUpdateModal = true;
+  state.updating = false;
+  state.updateProgress = 0;
+  renderUpdateModal();
+}
+
+function renderUpdateModal() {
+  $overlay.hidden = false;
+  $overlay.innerHTML = `
+    <div class="modal" style="width:440px;">
+      <div class="modal-pad" style="text-align:center;">
+        <div class="modal-icon" style="margin:0 auto 16px;width:60px;height:60px;border-radius:16px;">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v6"/><path d="m8 7 4-4 4 4"/><path d="M3 12a9 9 0 0 0 9 9 9 9 0 0 0 9-9"/></svg>
+        </div>
+        <div class="modal-title">Hay una nueva versión de las pruebas</div>
+        <div class="modal-sub">Se agregaron <b style="color:#334155;">3 pruebas nuevas</b> y correcciones. Actualiza para trabajar con la última versión.</div>
+
+        ${state.updating ? `
+          <div style="margin-top:22px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+              <span style="font-size:12.5px;font-weight:600;color:#334155;">Actualizando…</span>
+              <span style="font-size:12.5px;font-weight:700;color:var(--accent);">${state.updateProgress}%</span>
+            </div>
+            <div class="progress-track"><div class="progress-fill" style="width:${state.updateProgress}%"></div></div>
+          </div>
+        ` : `
+          <div class="modal-actions">
+            <button class="btn btn-secondary" id="update-later">Más tarde</button>
+            <button class="btn btn-primary" id="update-now">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>Actualizar ahora
+            </button>
+          </div>
+        `}
+      </div>
+    </div>
+  `;
+
+  if (!state.updating) {
+    document.getElementById('update-later').onclick = () => { closeModal(); state.showUpdateModal = false; };
+    document.getElementById('update-now').onclick = async () => {
+      state.updating = true;
+      renderUpdateModal();
+      await api.runUpdate();
+      setTimeout(() => {
+        state.updateAvailable = false;
+        state.showUpdateModal = false;
+        closeModal();
+        renderSidebarStatus();
+        if (state.screen === 'dashboard') renderDashboard();
+      }, 500);
+    };
+  }
+}
+
+/* ============================================================
+   BROWSER STUB — permite abrir renderer/index.html directo en un
+   navegador (fuera de Electron) para revisar visualmente el diseño.
+   En la app real, preload.js sustituye todo esto por IPC real.
+   ============================================================ */
+function createBrowserStub() {
+  const listeners = { progress: [], log: [], result: [] };
+  return {
+    windowMinimize() {}, windowMaximize() {}, windowClose() {},
+    async getTestTree() {
+      return fetch('../mock/tests-tree.json').then((r) => r.json()).catch(() => []);
+    },
+    async checkSyncStatus() { return { updateAvailable: true }; },
+    async runUpdate() {
+      for (let p = 0; p <= 100; p += 20) {
+        await new Promise((r) => setTimeout(r, 200));
+        listeners.progress.forEach((cb) => cb(p));
+      }
+      return { ok: true };
+    },
+    onUpdateProgress(cb) { listeners.progress.push(cb); },
+    async startRun({ testIds }) {
+      for (const id of testIds) {
+        listeners.result.forEach((cb) => cb({ id, status: 'running' }));
+        await new Promise((r) => setTimeout(r, 350));
+        const passed = Math.random() > 0.15;
+        listeners.log.forEach((cb) => cb({ level: passed ? 'pass' : 'fail', text: id }));
+        listeners.result.forEach((cb) => cb({ id, status: passed ? 'passed' : 'failed' }));
+      }
+      return { ok: true };
+    },
+    stopRun() {},
+    onRunLog(cb) { listeners.log.push(cb); },
+    onTestResult(cb) { listeners.result.push(cb); },
+    async generateReport() { return { docPath: '/reportes/demo.docx' }; },
+    async getHistory() {
+      return fetch('../mock/history.json').then((r) => r.json()).catch(() => []);
+    },
+  };
+}

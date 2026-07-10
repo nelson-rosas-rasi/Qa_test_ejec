@@ -1,0 +1,11 @@
+node_modules/
+dist/
+test-results/
+playwright-report/
+.last-test-results.json
+
+# Los .env reales nunca se versionan…
+.env
+.env.*
+# …pero los del repo de juguete no tienen secretos y son parte de las pruebas.
+!electron-app/test-fixtures/sample-repo/.env.*

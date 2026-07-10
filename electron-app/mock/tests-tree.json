@@ -1,0 +1,55 @@
+[
+  {
+    "id": "suite-auth",
+    "name": "Autenticación",
+    "files": [
+      {
+        "id": "file-login",
+        "name": "login.spec.ts",
+        "tests": [
+          { "id": "t1", "name": "El usuario inicia sesión con credenciales válidas" },
+          { "id": "t2", "name": "Muestra un error con contraseña inválida" },
+          { "id": "t3", "name": "Bloquea la cuenta tras 5 intentos fallidos" }
+        ]
+      },
+      {
+        "id": "file-logout",
+        "name": "logout.spec.ts",
+        "tests": [
+          { "id": "t4", "name": "Cierra sesión correctamente" },
+          { "id": "t5", "name": "Redirige al login tras cerrar sesión" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "suite-cart",
+    "name": "Carrito y pagos",
+    "files": [
+      {
+        "id": "file-cart",
+        "name": "cart.spec.ts",
+        "tests": [
+          { "id": "t6", "name": "Agregar un producto al carrito" },
+          { "id": "t7", "name": "Aplicar un cupón de descuento válido" },
+          { "id": "t8", "name": "Completar el pago con tarjeta de crédito" },
+          { "id": "t9", "name": "Rechazar pago con tarjeta vencida" }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "suite-profile",
+    "name": "Perfil y notificaciones",
+    "files": [
+      {
+        "id": "file-profile",
+        "name": "profile.spec.ts",
+        "tests": [
+          { "id": "t10", "name": "Actualizar datos del perfil" },
+          { "id": "t11", "name": "Enviar notificación por correo" }
+        ]
+      }
+    ]
+  }
+]

@@ -1,0 +1,24 @@
+{
+  "name": "qa-test-runner",
+  "version": "1.4.0",
+  "description": "QA Test Runner — ejecuta pruebas Playwright, se actualiza solo y genera reportes Word vía n8n.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "author": "",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.tuempresa.qatestrunner",
+    "productName": "QA Test Runner",
+    "win": { "target": "nsis" },
+    "mac": { "target": "dmg" },
+    "linux": { "target": "AppImage" }
+  }
+}
