@@ -40,3 +40,16 @@ test('los proyectos no se pisan entre sí', () => {
   assert.equal(store.getProject('erp').profile, 'a');
   assert.equal(store.getProject('medical').profile, 'b');
 });
+
+test('un error de lectura que no sea "no existe" se propaga', () => {
+  const dir = tempDir();
+  // Un directorio donde debería ir el archivo: readFileSync falla con EISDIR.
+  fs.mkdirSync(path.join(dir, 'config.json'));
+  assert.throws(() => createConfigStore(dir).getProject('erp'), (err) => err.code === 'EISDIR');
+});
+
+test('setProject crea la carpeta de configuración si no existe', () => {
+  const dir = path.join(tempDir(), 'anidada', 'config');
+  createConfigStore(dir).setProject('erp', { profile: 'demo' });
+  assert.equal(createConfigStore(dir).getProject('erp').profile, 'demo');
+});

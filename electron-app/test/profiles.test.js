@@ -51,3 +51,19 @@ test('un repo sin perfiles lanza NO_PROFILE', () => {
   const dir = repoWith({ 'package.json': '{}' });
   assert.throws(() => listProfiles(dir), (err) => err.code === 'NO_PROFILE');
 });
+
+test('un valor con = dentro no rompe el parseo ni filtra la contraseña', () => {
+  const dir = repoWith({ '.env.demo': 'QA_NOMBRE=Ana=Ruiz\nTEST_PASSWORD=abc=123\n' });
+  const perfiles = listProfiles(dir);
+  assert.equal(perfiles[0].name, 'Ana=Ruiz');
+  assert.ok(!JSON.stringify(perfiles).includes('abc=123'));
+});
+
+test('ordena con acentos según la locale española', () => {
+  const dir = repoWith({
+    '.env.b': 'QA_NOMBRE=Beto Paz\n',
+    '.env.a': 'QA_NOMBRE=Ángel Soto\n',
+  });
+  // Con una comparación ASCII, 'Á' (U+00C1) iría después de 'B'.
+  assert.deepEqual(listProfiles(dir).map((p) => p.name), ['Ángel Soto', 'Beto Paz']);
+});

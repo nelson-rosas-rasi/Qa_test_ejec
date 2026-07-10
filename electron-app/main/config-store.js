@@ -9,8 +9,16 @@ function createConfigStore(dir) {
   const file = path.join(dir, 'config.json');
 
   function readAll() {
+    let raw;
     try {
-      const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+      raw = fs.readFileSync(file, 'utf8');
+    } catch (err) {
+      if (err.code === 'ENOENT') return { projects: {} };
+      throw err;
+    }
+
+    try {
+      const data = JSON.parse(raw);
       return data && typeof data === 'object' ? data : { projects: {} };
     } catch {
       return { projects: {} };
