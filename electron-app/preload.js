@@ -6,6 +6,12 @@ contextBridge.exposeInMainWorld('qa', {
   windowMaximize: () => ipcRenderer.send('window:maximize'),
   windowClose: () => ipcRenderer.send('window:close'),
 
+  // proyectos
+  listProjects: () => ipcRenderer.invoke('projects:list'),
+  initializeProject: (input) => ipcRenderer.invoke('projects:initialize', input),
+  importProjectFolder: () => ipcRenderer.invoke('projects:importFolder'),
+  prepareProject: (projectId) => ipcRenderer.invoke('projects:prepare', projectId),
+
   // datos
   getTestTree: (projectId) => ipcRenderer.invoke('tests:getTree', projectId),
   checkSyncStatus: () => ipcRenderer.invoke('sync:checkStatus'),

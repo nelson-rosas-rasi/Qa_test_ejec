@@ -17,8 +17,24 @@
   "build": {
     "appId": "com.tuempresa.qatestrunner",
     "productName": "QA Test Runner",
-    "win": { "target": "nsis" },
-    "mac": { "target": "dmg" },
-    "linux": { "target": "AppImage" }
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    },
+    "asarUnpack": [
+      "main/playwright/ndjson-reporter.cjs"
+    ],
+    "files": [
+      "main.js",
+      "preload.js",
+      "main/**/*",
+      "renderer/**/*",
+      "mock/**/*"
+    ]
   }
 }

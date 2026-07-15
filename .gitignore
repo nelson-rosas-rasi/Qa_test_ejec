@@ -9,3 +9,5 @@ playwright-report/
 .env.*
 # …pero los del repo de juguete no tienen secretos y son parte de las pruebas.
 !electron-app/test-fixtures/sample-repo/.env.*
+
+app-run.log

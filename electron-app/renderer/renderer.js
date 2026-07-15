@@ -10,15 +10,11 @@
 // configurable, y un `const qa` global colisiona con ella (SyntaxError).
 const api = window.qa || createBrowserStub();
 
-const PROJECTS = [
-  { id: 'erp', name: 'ERP', suite: 'Checkout E2E', color: '#2563eb' },
-  { id: 'medical', name: 'Medical', suite: 'Historial Clínico', color: '#0d9488' },
-  { id: 'finance', name: 'Finanzas', suite: 'Facturación', color: '#9333ea' },
-];
+let projects = [];
 
 const state = {
   screen: 'dashboard',
-  project: 'erp',
+  project: null,
   projectMenuOpen: false,
   profiles: [],
   profile: null,
@@ -50,11 +46,22 @@ init();
 async function init() {
   wireTitlebar();
   wireSidebar();
-  await loadProject(state.project);
+  wireApiEvents();
+  projects = await api.listProjects();
+  state.project = projects[0]?.id || null;
+  if (!state.project) {
+    renderProjectSwitcher(); renderSidebarStatus(); renderEmptyProject(); openProjectModal(true); return;
+  }
+  if (!await loadProject(state.project)) return;
   await loadProfiles();
   const sync = await api.checkSyncStatus();
   state.updateAvailable = sync.updateAvailable;
   renderSidebarStatus();
+
+  renderScreen();
+}
+
+function wireApiEvents() {
   api.onUpdateProgress((pct) => {
     state.updateProgress = pct;
     if (state.showUpdateModal) renderUpdateModal();
@@ -67,15 +74,24 @@ async function init() {
     state.runResults[entry.id] = entry.status;
     if (state.screen === 'live') renderLive();
   });
-  renderScreen();
 }
 
 async function loadProject(projectId) {
+  const prepared = await api.prepareProject(projectId);
+  if (!prepared.ok) { alert(prepared.error); return false; }
+  projects = projects.map((p) => p.id === projectId ? prepared.project : p);
   state.testTree = await api.getTestTree(projectId);
   state.selected = new Set();
   state.expandedSuites = new Set(state.testTree.map((s) => s.id));
   state.history = await api.getHistory();
+  return true;
 }
+function currentProject() { return projects.find((p) => p.id === state.project) || null; }
+function projectColor(p) {
+  const colors = ['#2563eb','#0d9488','#9333ea','#ea580c','#0891b2'];
+  return colors[[...(p?.id || '')].reduce((n,c) => n + c.charCodeAt(0),0) % colors.length];
+}
+function projectSuite(p) { return p?.name || 'Pruebas automatizadas'; }
 
 /* ============================================================
    TITLEBAR
@@ -114,35 +130,30 @@ function wireSidebar() {
 }
 
 function renderProjectSwitcher() {
-  const p = PROJECTS.find((x) => x.id === state.project);
-  document.getElementById('project-dot').style.background = p.color;
-  document.getElementById('project-name').textContent = p.name;
-  document.getElementById('project-suite').textContent = p.suite;
-  const chev = document.getElementById('project-chev').firstElementChild;
-  chev.parentElement.classList.toggle('open', state.projectMenuOpen);
-
+  const active = currentProject();
+  document.getElementById('project-dot').style.background = active ? projectColor(active) : '#94a3b8';
+  document.getElementById('project-name').textContent = active?.name || 'Sin proyecto';
+  document.getElementById('project-suite').textContent = active ? `rama ${active.defaultBranch}` : 'Inicializa uno';
+  document.getElementById('project-chev').classList.toggle('open', state.projectMenuOpen);
   const menu = document.getElementById('project-menu');
-  menu.hidden = !state.projectMenuOpen;
-  menu.innerHTML = '';
-  PROJECTS.forEach((proj) => {
-    const row = document.createElement('div');
-    row.className = 'project-menu-item';
-    row.innerHTML = `
-      <span class="dot" style="background:${proj.color}"></span>
-      <span class="label">${proj.name}</span>
-      ${proj.id === state.project ? checkSvg(proj.color) : ''}
-    `;
+  menu.hidden = !state.projectMenuOpen; menu.innerHTML = '';
+  projects.forEach((project) => {
+    const row = document.createElement('div'); row.className = 'project-menu-item';
+    const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = projectColor(project);
+    const label = document.createElement('span'); label.className = 'label'; label.textContent = project.name;
+    row.append(dot,label);
+    if (project.id === state.project) row.insertAdjacentHTML('beforeend',checkSvg(projectColor(project)));
     row.onclick = async (e) => {
-      e.stopPropagation();
-      state.project = proj.id;
-      state.projectMenuOpen = false;
-      renderProjectSwitcher();
-      await loadProject(proj.id);
-      await loadProfiles();
-      renderScreen();
+      e.stopPropagation(); state.projectMenuOpen = false;
+      if (!await loadProject(project.id)) return;
+      state.project = project.id; renderProjectSwitcher(); await loadProfiles(); renderScreen();
     };
     menu.appendChild(row);
   });
+  const add = document.createElement('div'); add.className = 'project-menu-item';
+  add.innerHTML = '<span style="font-size:18px;color:#2563eb">+</span><span class="label">Inicializar proyecto</span>';
+  add.onclick = (e) => { e.stopPropagation(); state.projectMenuOpen=false; renderProjectSwitcher(); openProjectModal(false); };
+  menu.appendChild(add);
 }
 
 function checkSvg(color) {
@@ -196,6 +207,7 @@ function renderProfileSwitcher() {
 
 function renderSidebarStatus() {
   const el = document.getElementById('sync-pill');
+  if (!state.project) { el.className = 'sync-pill'; el.innerHTML = '<span class="txt">Sin proyecto inicializado</span>'; el.onclick = null; return; }
   if (state.updateAvailable) {
     el.className = 'sync-pill update';
     el.innerHTML = `<span class="bullet"></span><span class="txt">Actualización disponible</span>`;
@@ -213,6 +225,7 @@ function renderSidebarStatus() {
    SCREEN ROUTER
    ============================================================ */
 function renderScreen() {
+  if (!state.project) return renderEmptyProject();
   if (state.screen === 'dashboard') renderDashboard();
   else if (state.screen === 'live') renderLive();
   else if (state.screen === 'results') renderResults();
@@ -223,7 +236,7 @@ function renderScreen() {
    DASHBOARD
    ============================================================ */
 function renderDashboard() {
-  const project = PROJECTS.find((p) => p.id === state.project);
+  const project = currentProject();
   const totalTests = countAllTests();
   const selectedCount = state.selected.size;
   const totalSuites = state.testTree.length;
@@ -235,10 +248,10 @@ function renderDashboard() {
           <div>
             <div class="screen-title">Pruebas</div>
             <div class="screen-subtitle">
-              <span class="badge" style="color:${project.color};background:${project.color}18;border:1px solid ${project.color}55;">
-                <span class="bdot" style="background:${project.color}"></span>${project.name}
+              <span class="badge" style="color:${projectColor(project)};background:${projectColor(project)}18;border:1px solid ${projectColor(project)}55;">
+                <span class="bdot" style="background:${projectColor(project)}"></span>${project.name}
               </span>
-              <span style="font-weight:500;">${project.suite}</span>
+              <span style="font-weight:500;">${projectSuite(project)}</span>
               <span style="color:#cbd5e1;">·</span>
               <span style="display:inline-flex;align-items:center;gap:4px;">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>rama principal
@@ -443,7 +456,7 @@ function renderRunOptionsModal() {
   const opts = state.runOptions;
   const count = state.runTarget === 'all' ? countAllTests() : state.selected.size;
   const label = state.runTarget === 'all'
-    ? `${countAllTests()} pruebas · ${PROJECTS.find(p => p.id === state.project).suite}`
+    ? `${countAllTests()} pruebas · ${projectSuite(currentProject())}`
     : `${state.selected.size} pruebas seleccionadas`;
 
   $overlay.hidden = false;
@@ -518,6 +531,69 @@ function stopIcon() {
   return `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>`;
 }
 
+function renderEmptyProject() {
+  $main.innerHTML = `<div class="screen" style="display:grid;place-items:center;text-align:center;padding:40px"><div style="max-width:500px"><div class="screen-title">Inicializa tu primer proyecto</div><div class="screen-subtitle" style="margin:10px 0 22px">Detectaremos la rama principal, crearemos un clon administrado y validaremos Playwright.</div><button class="btn btn-primary" id="btn-init-project">Inicializar proyecto</button></div></div>`;
+  document.getElementById('btn-init-project').onclick = () => openProjectModal(true);
+}
+function openProjectModal(required) {
+  $overlay.hidden = false;
+  $overlay.innerHTML = `<div class="modal" style="width:500px"><div class="modal-pad">
+    <div class="modal-title">Inicializar proyecto</div>
+    <div class="modal-sub">El repositorio se usará en modo administrado sobre su rama principal remota.</div>
+    <label style="display:block;margin-top:20px;font-size:12px;font-weight:700">Nombre</label>
+    <input id="project-init-name" placeholder="Portal de clientes" style="width:100%;margin-top:7px;padding:11px;border:1px solid #dbe3ef;border-radius:8px;box-sizing:border-box">
+    <label style="display:block;margin-top:14px;font-size:12px;font-weight:700">Repositorio Git</label>
+    <input id="project-init-url" placeholder="https://servidor/equipo/pruebas.git" style="width:100%;margin-top:7px;padding:11px;border:1px solid #dbe3ef;border-radius:8px;box-sizing:border-box">
+    <div id="project-init-error" style="display:none;margin-top:12px;color:#b91c1c;font-size:12px"></div>
+    <div class="modal-actions"><button class="btn btn-secondary" id="project-import-folder">Traer carpeta clonada</button>${required ? '' : '<button class="btn btn-secondary" id="project-init-cancel">Cancelar</button>'}<button class="btn btn-primary" id="project-init-confirm">Validar e inicializar</button></div>
+  </div></div>`;
+  const acceptProject = async (result) => {
+    if (!result.ok) return false;
+    projects.push(result.project);
+    state.project = result.project.id;
+    closeModal();
+    renderProjectSwitcher();
+    if (!await loadProject(state.project)) return true;
+    await loadProfiles();
+    renderSidebarStatus();
+    renderScreen();
+    return true;
+  };
+  document.getElementById('project-import-folder').onclick = async () => {
+    const button = document.getElementById('project-import-folder');
+    const error = document.getElementById('project-init-error');
+    error.style.display = 'none';
+    try {
+      button.disabled = true;
+      button.textContent = 'Validando carpeta…';
+      const result = await api.importProjectFolder();
+      if (result.canceled) return;
+      if (!result.ok) {
+        error.textContent = result.error || 'No fue posible importar la carpeta.';
+        error.style.display = 'block';
+        return;
+      }
+      await acceptProject(result);
+    } catch (err) {
+      error.textContent = err.message || String(err);
+      error.style.display = 'block';
+    } finally {
+      if (document.body.contains(button)) {
+        button.disabled = false;
+        button.textContent = 'Traer carpeta clonada';
+      }
+    }
+  };
+  if (!required) document.getElementById('project-init-cancel').onclick = closeModal;
+  document.getElementById('project-init-confirm').onclick = async () => {
+    const button=document.getElementById('project-init-confirm'), error=document.getElementById('project-init-error');
+    button.disabled=true; button.textContent='Clonando e instalando…'; error.style.display='none';
+    const result=await api.initializeProject({name:document.getElementById('project-init-name').value,repoUrl:document.getElementById('project-init-url').value});
+    if(!result.ok){error.textContent=result.error;error.style.display='block';button.disabled=false;button.textContent='Validar e inicializar';return;}
+    await acceptProject(result);
+  };
+}
+
 function closeModal() {
   $overlay.hidden = true;
   $overlay.innerHTML = '';
@@ -583,7 +659,7 @@ function renderLive() {
               <div class="screen-title">Ejecución en vivo</div>
               ${state.running ? `<span class="badge" style="color:#2563eb;background:var(--accent-light);"><span class="bdot" style="background:#2563eb;animation:qblink 1s infinite;"></span>En curso</span>` : ''}
             </div>
-            <div class="screen-subtitle">${PROJECTS.find(p=>p.id===state.project).suite} · ${ids.length} pruebas seleccionadas</div>
+            <div class="screen-subtitle">${projectSuite(currentProject())} · ${ids.length} pruebas seleccionadas</div>
           </div>
           <button class="btn btn-danger" id="btn-stop" ${state.running ? '' : 'disabled'}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>Detener ejecución
@@ -675,7 +751,7 @@ function renderResults() {
         <div class="row">
           <div>
             <div class="screen-title">Resultado de ejecución</div>
-            <div class="screen-subtitle">${PROJECTS.find(p=>p.id===state.project).suite} · ${new Date().toLocaleString('es-CO', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })} · por María Gómez</div>
+            <div class="screen-subtitle">${projectSuite(currentProject())} · ${new Date().toLocaleString('es-CO', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })} · por María Gómez</div>
           </div>
           <div style="display:flex;gap:10px;">
             <button class="btn btn-secondary">
@@ -700,7 +776,7 @@ function renderResults() {
           <div class="report-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="M8 13h8M8 17h5"/></svg></div>
           <div style="flex:1;">
             <div class="report-text-title">Reporte generado automáticamente</div>
-            <div class="report-text-sub">Reporte-${PROJECTS.find(p=>p.id===state.project).suite.replace(/\s+/g,'-')}-${new Date().toISOString().slice(0,10)}.docx · generado al finalizar la ejecución</div>
+            <div class="report-text-sub">Reporte-${projectSuite(currentProject()).replace(/\s+/g,'-')}-${new Date().toISOString().slice(0,10)}.docx · generado al finalizar la ejecución</div>
           </div>
           <button class="btn btn-primary" id="btn-open-doc">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6M10 14 21 3"/></svg>Abrir documento
@@ -891,6 +967,10 @@ function renderUpdateModal() {
 function createBrowserStub() {
   const listeners = { progress: [], log: [], result: [] };
   return {
+    async listProjects() { return [{ id:'demo', name:'Proyecto demo', defaultBranch:'main' }]; },
+    async initializeProject({ name, repoUrl }) { return { ok:true, project:{ id:'nuevo', name, repoUrl, defaultBranch:'main' } }; },
+    async importProjectFolder() { return { canceled:true, ok:false }; },
+    async prepareProject(projectId) { return { ok:true, project:{ id:projectId, name:'Proyecto demo', defaultBranch:'main' } }; },
     windowMinimize() {}, windowMaximize() {}, windowClose() {},
     async getTestTree() {
       return fetch('../mock/tests-tree.json').then((r) => r.json()).catch(() => []);

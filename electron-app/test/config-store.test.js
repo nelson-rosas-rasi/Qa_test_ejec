@@ -53,3 +53,9 @@ test('setProject crea la carpeta de configuración si no existe', () => {
   createConfigStore(dir).setProject('erp', { profile: 'demo' });
   assert.equal(createConfigStore(dir).getProject('erp').profile, 'demo');
 });
+
+test('listProjects devuelve el catálogo persistido', () => {
+  const store = createConfigStore(tempDir());
+  store.setProject('erp', { name: 'ERP', defaultBranch: 'main' });
+  assert.deepEqual(store.listProjects(), [{ id: 'erp', name: 'ERP', defaultBranch: 'main' }]);
+});

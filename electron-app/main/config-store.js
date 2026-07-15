@@ -26,6 +26,11 @@ function createConfigStore(dir) {
   }
 
   return {
+    listProjects() {
+      const data = readAll();
+      return Object.entries(data.projects || {}).map(([id, project]) => ({ id, ...project }));
+    },
+
     getProject(projectId) {
       const data = readAll();
       return (data.projects && data.projects[projectId]) || {};

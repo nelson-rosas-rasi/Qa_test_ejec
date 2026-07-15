@@ -5,11 +5,10 @@ const { app, ipcMain, dialog } = require('electron');
 const { appError } = require('./errors');
 const { createConfigStore } = require('./config-store');
 const { listProfiles } = require('./profiles');
+const { createProjectManager, uniqueProjectId } = require('./projects');
 const { locatePlaywrightCli } = require('./playwright/locate');
 const { listTests } = require('./playwright/list-tests');
 const { runTests } = require('./playwright/run-tests');
-
-const PROJECT_LABELS = { erp: 'ERP', medical: 'Medical', finance: 'Finanzas' };
 
 /** Empaquetado: el reporter debe vivir fuera de app.asar para que Playwright pueda leerlo. */
 function reporterPath() {
@@ -26,25 +25,60 @@ function reportersFor(repoPath) {
 }
 
 function registerIpc(getWindow) {
-  const store = createConfigStore(app.getPath('userData'));
+  const userData = app.getPath('userData');
+  const store = createConfigStore(userData);
+  const projects = createProjectManager({ projectsDir: path.join(userData, 'projects') });
   let currentRun = null;
-
   const showError = (err) => dialog.showErrorBox('QA Test Runner', err.message || String(err));
-
+  const publicProject = ({ repoPath, dependencyLockHash, ...project }) => project;
+  function ensureProject(projectId) {
+    const project = store.getProject(projectId);
+    if (!project.repoPath) throw appError('PROJECT_NOT_INITIALIZED', 'Inicializa un proyecto antes de continuar.');
+    return { id: projectId, ...project };
+  }
   async function ensureRepoPath(projectId) {
-    const saved = store.getProject(projectId).repoPath;
-    if (saved && fs.existsSync(saved)) return saved;
+    const project = ensureProject(projectId);
+    if (!fs.existsSync(project.repoPath)) throw appError('REPOSITORY_NOT_FOUND', 'No se encontró el repositorio local.');
+    return project.repoPath;
+  }
 
+  /* ---------- proyectos ---------- */
+  ipcMain.handle('projects:list', () => store.listProjects().filter((p) => p.repoPath && p.repoUrl && p.defaultBranch).map(publicProject));
+  ipcMain.handle('projects:initialize', async (_event, input) => {
+    try {
+      const name = String(input?.name || '').trim();
+      const repoUrl = String(input?.repoUrl || '').trim();
+      const id = uniqueProjectId(name, new Set(store.listProjects().map((p) => p.id)));
+      const project = await projects.initialize({ id, name, repoUrl });
+      const { id: projectId, ...saved } = project;
+      store.setProject(projectId, saved);
+      return { ok: true, project: publicProject(project) };
+    } catch (err) { return { ok: false, error: err.message || String(err), code: err.code }; }
+  });
+  ipcMain.handle('projects:importFolder', async () => {
     const answer = await dialog.showOpenDialog(getWindow(), {
-      title: `Elige la carpeta del proyecto ${PROJECT_LABELS[projectId] || projectId}`,
+      title: 'Elige una carpeta que ya tenga el repositorio clonado',
       properties: ['openDirectory'],
     });
-    if (answer.canceled || !answer.filePaths[0]) {
-      throw appError('REPO_NOT_CONFIGURED', 'No elegiste una carpeta para este proyecto.');
-    }
-    store.setProject(projectId, { repoPath: answer.filePaths[0] });
-    return answer.filePaths[0];
-  }
+    if (answer.canceled || !answer.filePaths[0]) return { ok: false, canceled: true };
+    try {
+      const sourcePath = answer.filePaths[0];
+      const name = path.basename(sourcePath);
+      const id = uniqueProjectId(name, new Set(store.listProjects().map((p) => p.id)));
+      const project = await projects.importExisting({ id, sourcePath });
+      const { id: projectId, ...saved } = project;
+      store.setProject(projectId, saved);
+      return { ok: true, project: publicProject(project) };
+    } catch (err) { return { ok: false, error: err.message || String(err), code: err.code }; }
+  });
+  ipcMain.handle('projects:prepare', async (_event, projectId) => {
+    try {
+      const project = ensureProject(projectId);
+      const update = await projects.prepare(project);
+      store.setProject(projectId, update);
+      return { ok: true, project: publicProject({ ...project, ...update }) };
+    } catch (err) { return { ok: false, error: err.message || String(err), code: err.code }; }
+  });
 
   /* ---------- ventana ---------- */
   ipcMain.on('window:minimize', () => getWindow()?.minimize());
