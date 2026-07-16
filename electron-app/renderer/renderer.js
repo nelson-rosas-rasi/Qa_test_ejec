@@ -48,8 +48,9 @@ async function init() {
   wireApiEvents();
   projects = await api.listProjects();
   state.project = projects[0]?.id || null;
+  renderProjectSwitcher();
   if (!state.project) {
-    renderProjectSwitcher(); renderSidebarStatus(); renderEmptyProject(); return;
+    renderSidebarStatus(); renderEmptyProject(); return;
   }
   if (!await loadProject(state.project)) return;
   await loadProfiles();
@@ -120,8 +121,6 @@ function wireSidebar() {
     state.profileMenuOpen = !state.profileMenuOpen;
     renderProfileSwitcher();
   };
-
-  renderProjectSwitcher();
 }
 
 function renderProjectSwitcher() {
