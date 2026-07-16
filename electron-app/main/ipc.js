@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { app, ipcMain, dialog } = require('electron');
+const { app, ipcMain, dialog, safeStorage, shell } = require('electron');
 
 const { appError } = require('./errors');
 const { createConfigStore } = require('./config-store');
@@ -9,6 +9,11 @@ const { createProjectManager, uniqueProjectId } = require('./projects');
 const { locatePlaywrightCli } = require('./playwright/locate');
 const { listTests } = require('./playwright/list-tests');
 const { runTests } = require('./playwright/run-tests');
+const { createAccountStore } = require('./github/account');
+const { createGitAuth } = require('./github/git-auth');
+const { requestDeviceCode, pollForToken } = require('./github/device-flow');
+const { fetchIdentity } = require('./github/identity');
+const { readGithubConfig } = require('./github/config');
 
 /** Empaquetado: el reporter debe vivir fuera de app.asar para que Playwright pueda leerlo. */
 function reporterPath() {
@@ -27,8 +32,12 @@ function reportersFor(repoPath) {
 function registerIpc(getWindow) {
   const userData = app.getPath('userData');
   const store = createConfigStore(userData);
-  const projects = createProjectManager({ projectsDir: path.join(userData, 'projects') });
+  // safeStorage sólo funciona tras app.whenReady(); registerIpc ya se llama ahí.
+  const account = createAccountStore({ store, safeStorage });
+  const auth = createGitAuth(() => account.load()?.token || null);
+  const projects = createProjectManager({ projectsDir: path.join(userData, 'projects'), auth });
   let currentRun = null;
+  let currentDeviceFlow = null;
   const showError = (err) => dialog.showErrorBox('QA Test Runner', err.message || String(err));
   const publicProject = ({ repoPath, dependencyLockHash, ...project }) => project;
   function ensureProject(projectId) {
@@ -78,6 +87,66 @@ function registerIpc(getWindow) {
       store.setProject(projectId, update);
       return { ok: true, project: publicProject({ ...project, ...update }) };
     } catch (err) { return { ok: false, error: err.message || String(err), code: err.code }; }
+  });
+
+  /* ---------- cuenta de GitHub ---------- */
+  ipcMain.handle('github:status', async () => {
+    const saved = account.load();
+    if (!saved) return { connected: false };
+    try {
+      const identity = await fetchIdentity({ token: saved.token });
+      account.saveIdentity(identity);
+      return { connected: true, ...identity };
+    } catch (err) {
+      if (err.code === 'GITHUB_TOKEN_INVALID') {
+        account.clear();
+        return { connected: false, reason: 'EXPIRED' };
+      }
+      // Sin red: sigue conectada, con lo último que supimos de ella.
+      return { connected: true, ...(saved.identity || {}), stale: true };
+    }
+  });
+
+  ipcMain.handle('github:connect', async (event) => {
+    const { clientId, scope } = readGithubConfig();
+    if (!clientId) {
+      return { ok: false, code: 'GITHUB_NOT_CONFIGURED', error: 'La app todavía no tiene configurada la conexión con GitHub. Avisa al equipo.' };
+    }
+    if (currentDeviceFlow) {
+      return { ok: false, code: 'GITHUB_CONNECT_IN_PROGRESS', error: 'Ya hay una conexión en curso.' };
+    }
+    const controller = new AbortController();
+    currentDeviceFlow = controller;
+    try {
+      const device = await requestDeviceCode({ clientId, scope });
+      event.sender.send('github:deviceCode', { userCode: device.userCode, verificationUri: device.verificationUri });
+      await shell.openExternal(device.verificationUri);
+      const token = await pollForToken({
+        clientId,
+        deviceCode: device.deviceCode,
+        interval: device.interval,
+        expiresIn: device.expiresIn,
+        sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+        signal: controller.signal,
+      });
+      const identity = await fetchIdentity({ token });
+      account.save(token, identity);
+      return { ok: true, account: identity };
+    } catch (err) {
+      return { ok: false, error: err.message || String(err), code: err.code };
+    } finally {
+      currentDeviceFlow = null;
+    }
+  });
+
+  ipcMain.handle('github:cancelConnect', () => {
+    currentDeviceFlow?.abort();
+    return { ok: true };
+  });
+
+  ipcMain.handle('github:disconnect', () => {
+    account.clear();
+    return { ok: true };
   });
 
   /* ---------- ventana ---------- */
