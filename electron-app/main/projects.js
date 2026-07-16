@@ -44,8 +44,19 @@ function validateManagedPath(repoPath, projectsDir) {
   if (!candidate.startsWith(root)) throw appError('UNMANAGED_REPOSITORY', 'La carpeta del proyecto no está administrada por QA Test Runner.');
 }
 
+/**
+ * GitHub responde 404 —no 403— ante un repositorio privado sin acceso, para no
+ * filtrar su existencia. Desde fuera es imposible distinguir "no existe" de "no
+ * tienes permiso", así que el mensaje cubre los dos casos sin fingir que sí.
+ */
+const ACCESS_DENIED = /(repository not found|authentication failed|could not read username|403 forbidden|terminal prompts disabled)/i;
+
 function friendlyCommandError(code, message, err) {
-  const detail = String(err?.stderr || err?.message || '').trim().split(/\r?\n/).slice(-2).join(' ');
+  const stderr = String(err?.stderr || err?.message || '');
+  if (ACCESS_DENIED.test(stderr)) {
+    return appError('REPOSITORY_ACCESS_DENIED', 'Este proyecto no existe o tu cuenta no tiene acceso. Pídeselo al responsable.');
+  }
+  const detail = stderr.trim().split(/\r?\n/).slice(-2).join(' ');
   return appError(code, detail ? `${message} ${detail}` : message);
 }
 

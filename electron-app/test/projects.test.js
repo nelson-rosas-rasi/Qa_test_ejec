@@ -145,3 +145,40 @@ test('sin cuenta conectada, git se invoca igual que siempre', async () => {
     .catch(() => {});
   assert.deepEqual(calls[0], ['ls-remote', '--symref', 'https://example.test/qa.git', 'HEAD']);
 });
+
+test('un repositorio privado sin acceso se traduce a REPOSITORY_ACCESS_DENIED', async () => {
+  const run = async () => {
+    throw Object.assign(new Error('Command failed'), {
+      stderr: "remote: Repository not found.\nfatal: repository 'https://github.com/equipo/pruebas.git/' not found",
+    });
+  };
+  await assert.rejects(
+    createProjectManager({ projectsDir: temp(), run })
+      .initialize({ id: 'x', name: 'X', repoUrl: 'https://github.com/equipo/pruebas.git' }),
+    (err) => err.code === 'REPOSITORY_ACCESS_DENIED',
+  );
+});
+
+test('una credencial rechazada también se traduce a REPOSITORY_ACCESS_DENIED', async () => {
+  const run = async () => {
+    throw Object.assign(new Error('Command failed'), {
+      stderr: 'fatal: Authentication failed for https://github.com/equipo/pruebas.git/',
+    });
+  };
+  await assert.rejects(
+    createProjectManager({ projectsDir: temp(), run })
+      .initialize({ id: 'x', name: 'X', repoUrl: 'https://github.com/equipo/pruebas.git' }),
+    (err) => err.code === 'REPOSITORY_ACCESS_DENIED',
+  );
+});
+
+test('otros fallos de git conservan su mensaje de siempre', async () => {
+  const run = async () => {
+    throw Object.assign(new Error('Command failed'), { stderr: 'fatal: unable to access: SSL certificate problem' });
+  };
+  await assert.rejects(
+    createProjectManager({ projectsDir: temp(), run })
+      .initialize({ id: 'x', name: 'X', repoUrl: 'https://github.com/equipo/pruebas.git' }),
+    (err) => err.code === 'REPOSITORY_UNAVAILABLE',
+  );
+});
