@@ -88,3 +88,11 @@ test('setSetting con null borra la clave', () => {
   store.setSetting('github', null);
   assert.equal(createConfigStore(dir).getSetting('github'), undefined);
 });
+
+test('setSetting rechaza la clave reservada "projects" y el catálogo sobrevive', () => {
+  const dir = tempDir();
+  const store = createConfigStore(dir);
+  store.setProject('erp', { profile: 'demo' });
+  assert.throws(() => store.setSetting('projects', null), /clave "projects" está reservada/);
+  assert.deepEqual(createConfigStore(dir).getProject('erp'), { profile: 'demo' });
+});

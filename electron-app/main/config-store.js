@@ -51,10 +51,12 @@ function createConfigStore(dir) {
 
     /** Claves de alcance global (no ligadas a un proyecto), en la raíz del JSON. */
     getSetting(key) {
+      if (key === 'projects') throw new Error('La clave "projects" está reservada');
       return readAll()[key];
     },
 
     setSetting(key, value) {
+      if (key === 'projects') throw new Error('La clave "projects" está reservada');
       const data = readAll();
       if (value === null || value === undefined) delete data[key];
       else data[key] = value;
