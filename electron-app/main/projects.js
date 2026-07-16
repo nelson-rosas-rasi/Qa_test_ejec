@@ -49,8 +49,14 @@ function friendlyCommandError(code, message, err) {
   return appError(code, detail ? `${message} ${detail}` : message);
 }
 
-function createProjectManager({ projectsDir, gitPath = 'git', npmPath = process.platform === 'win32' ? 'npm.cmd' : 'npm', run = runFile }) {
-  const git = (args, cwd) => run(gitPath, args, cwd ? { cwd } : {});
+/** Por defecto no inyecta nada: sin cuenta conectada, git se invoca como siempre. */
+const NO_AUTH = { args: () => [], env: () => ({}) };
+
+function createProjectManager({ projectsDir, gitPath = 'git', npmPath = process.platform === 'win32' ? 'npm.cmd' : 'npm', run = runFile, auth = NO_AUTH }) {
+  const git = (args, cwd) => run(gitPath, [...auth.args(), ...args], {
+    ...(cwd ? { cwd } : {}),
+    env: { ...process.env, ...auth.env() },
+  });
 
   async function installDependencies(repoPath, previousHash) {
     const currentHash = lockHash(repoPath);
