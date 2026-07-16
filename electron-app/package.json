@@ -1,7 +1,7 @@
 {
-  "name": "qa-test-runner",
+  "name": "runqa",
   "version": "1.4.0",
-  "description": "QA Test Runner — ejecuta pruebas Playwright, se actualiza solo y genera reportes Word vía n8n.",
+  "description": "RunQA — ejecuta pruebas Playwright, se actualiza solo y genera reportes Word vía n8n.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -16,7 +16,7 @@
   },
   "build": {
     "appId": "com.tuempresa.qatestrunner",
-    "productName": "QA Test Runner",
+    "productName": "RunQA",
     "win": {
       "target": "nsis"
     },

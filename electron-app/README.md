@@ -1,4 +1,4 @@
-# QA Test Runner — Electron (frontend)
+# RunQA — Electron
 
 Aplicación de escritorio para el equipo de QA: ejecuta pruebas Playwright con
 un clic, se mantiene actualizada, y dispara un flujo n8n que genera el

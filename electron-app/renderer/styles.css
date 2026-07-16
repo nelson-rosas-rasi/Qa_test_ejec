@@ -55,11 +55,10 @@ button { font-family: inherit; }
 }
 .titlebar-brand { display: flex; align-items: center; gap: 9px; }
 .titlebar-logo {
-  width: 21px; height: 21px; border-radius: 6px;
-  background: linear-gradient(140deg, #3b82f6, #1d4ed8);
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 1px 3px rgba(37,99,235,.4);
+  width: 24px; height: 24px; border-radius: 7px; overflow: hidden; flex: none;
+  background: #fff; box-shadow: 0 1px 3px rgba(15,23,42,.16);
 }
+.titlebar-logo img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .titlebar-name { font-size: 12.5px; font-weight: 600; color: #334155; }
 .titlebar-version { font-size: 11px; color: #94a3b8; font-weight: 500; }
 .titlebar-controls { display: flex; height: 100%; -webkit-app-region: no-drag; }
