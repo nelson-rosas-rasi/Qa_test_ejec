@@ -83,21 +83,27 @@ button { font-family: inherit; }
 }
 .sidebar-spacer { flex: 1; }
 
-.project-switcher { border: 1px solid #e2e8f0; border-radius: 9px; background: #fff; box-shadow: 0 1px 2px rgba(15,23,42,.04); overflow: hidden; }
-.project-trigger { display: flex; align-items: center; gap: 8px; padding: 10px; cursor: pointer; }
-.project-trigger:hover { background: #f8fafc; }
-.project-trigger .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
-.project-trigger-text { flex: 1; min-width: 0; }
-.project-name { font-size: 13px; font-weight: 600; color: #1e293b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.project-suite { font-size: 10.5px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.project-list { display: flex; flex-direction: column; gap: 2px; }
+.project-item { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 7px; cursor: pointer; }
+.project-item:hover { background: #eef2f8; }
+.project-item.active { background: #fff; box-shadow: 0 1px 2px rgba(15,23,42,.06); cursor: default; }
+.project-item .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.project-item-text { flex: 1; min-width: 0; }
+.project-item-name { font-size: 12.5px; font-weight: 600; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.project-item-branch { font-size: 10.5px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.project-empty { font-size: 11.5px; color: #a2adbd; padding: 8px; }
+
+.project-add {
+  display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 6px;
+  padding: 8px; border: 1px dashed #cbd5e1; border-radius: 7px; background: none;
+  font-family: inherit; font-size: 12.5px; font-weight: 600; color: var(--accent);
+  cursor: pointer; text-align: left;
+}
+.project-add:hover { background: var(--accent-light); border-color: var(--accent); }
+.project-add-icon { font-size: 15px; line-height: 1; }
+
 .chev { display: inline-flex; transition: transform .15s; flex: none; }
 .chev.open { transform: rotate(180deg); }
-.project-menu { border-top: 1px solid var(--line-2); padding: 5px; display: flex; flex-direction: column; gap: 2px; }
-.project-menu[hidden] { display: none; }
-.project-menu-item { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 7px; cursor: pointer; }
-.project-menu-item:hover { background: #f8fafc; }
-.project-menu-item .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.project-menu-item span.label { flex: 1; font-size: 12.5px; font-weight: 600; color: #334155; }
 
 .nav { display: flex; flex-direction: column; gap: 3px; }
 .nav-item {

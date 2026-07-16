@@ -15,7 +15,6 @@ let projects = [];
 const state = {
   screen: 'dashboard',
   project: null,
-  projectMenuOpen: false,
   profiles: [],
   profile: null,
   profileMenuOpen: false,
@@ -106,11 +105,7 @@ function wireTitlebar() {
    SIDEBAR
    ============================================================ */
 function wireSidebar() {
-  const trigger = document.getElementById('project-trigger');
-  trigger.onclick = () => {
-    state.projectMenuOpen = !state.projectMenuOpen;
-    renderProjectSwitcher();
-  };
+  document.getElementById('project-add').onclick = () => openProjectModal();
 
   document.querySelectorAll('.nav-item').forEach((el) => {
     el.onclick = () => {
@@ -130,30 +125,52 @@ function wireSidebar() {
 }
 
 function renderProjectSwitcher() {
-  const active = currentProject();
-  document.getElementById('project-dot').style.background = active ? projectColor(active) : '#94a3b8';
-  document.getElementById('project-name').textContent = active?.name || 'Sin proyecto';
-  document.getElementById('project-suite').textContent = active ? `rama ${active.defaultBranch}` : 'Inicializa uno';
-  document.getElementById('project-chev').classList.toggle('open', state.projectMenuOpen);
-  const menu = document.getElementById('project-menu');
-  menu.hidden = !state.projectMenuOpen; menu.innerHTML = '';
+  const list = document.getElementById('project-list');
+  list.innerHTML = '';
+
+  if (projects.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'project-empty';
+    empty.textContent = 'Todavía no hay proyectos';
+    list.appendChild(empty);
+    return;
+  }
+
   projects.forEach((project) => {
-    const row = document.createElement('div'); row.className = 'project-menu-item';
-    const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = projectColor(project);
-    const label = document.createElement('span'); label.className = 'label'; label.textContent = project.name;
-    row.append(dot,label);
-    if (project.id === state.project) row.insertAdjacentHTML('beforeend',checkSvg(projectColor(project)));
-    row.onclick = async (e) => {
-      e.stopPropagation(); state.projectMenuOpen = false;
+    const active = project.id === state.project;
+    const row = document.createElement('div');
+    row.className = 'project-item' + (active ? ' active' : '');
+
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.background = projectColor(project);
+
+    const text = document.createElement('div');
+    text.className = 'project-item-text';
+    const name = document.createElement('div');
+    name.className = 'project-item-name';
+    name.textContent = project.name;
+    text.appendChild(name);
+    if (active) {
+      const branch = document.createElement('div');
+      branch.className = 'project-item-branch';
+      branch.textContent = `rama ${project.defaultBranch}`;
+      text.appendChild(branch);
+    }
+
+    row.append(dot, text);
+    if (active) row.insertAdjacentHTML('beforeend', checkSvg(projectColor(project)));
+
+    row.onclick = async () => {
+      if (project.id === state.project) return;
       if (!await loadProject(project.id)) return;
-      state.project = project.id; renderProjectSwitcher(); await loadProfiles(); renderScreen();
+      state.project = project.id;
+      renderProjectSwitcher();
+      await loadProfiles();
+      renderScreen();
     };
-    menu.appendChild(row);
+    list.appendChild(row);
   });
-  const add = document.createElement('div'); add.className = 'project-menu-item';
-  add.innerHTML = '<span style="font-size:18px;color:#2563eb">+</span><span class="label">Inicializar proyecto</span>';
-  add.onclick = (e) => { e.stopPropagation(); state.projectMenuOpen=false; renderProjectSwitcher(); openProjectModal(); };
-  menu.appendChild(add);
 }
 
 function checkSvg(color) {
