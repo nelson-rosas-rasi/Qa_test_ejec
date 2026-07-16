@@ -50,7 +50,7 @@ async function init() {
   projects = await api.listProjects();
   state.project = projects[0]?.id || null;
   if (!state.project) {
-    renderProjectSwitcher(); renderSidebarStatus(); renderEmptyProject(); openProjectModal(true); return;
+    renderProjectSwitcher(); renderSidebarStatus(); renderEmptyProject(); return;
   }
   if (!await loadProject(state.project)) return;
   await loadProfiles();
@@ -152,7 +152,7 @@ function renderProjectSwitcher() {
   });
   const add = document.createElement('div'); add.className = 'project-menu-item';
   add.innerHTML = '<span style="font-size:18px;color:#2563eb">+</span><span class="label">Inicializar proyecto</span>';
-  add.onclick = (e) => { e.stopPropagation(); state.projectMenuOpen=false; renderProjectSwitcher(); openProjectModal(false); };
+  add.onclick = (e) => { e.stopPropagation(); state.projectMenuOpen=false; renderProjectSwitcher(); openProjectModal(); };
   menu.appendChild(add);
 }
 
@@ -533,9 +533,9 @@ function stopIcon() {
 
 function renderEmptyProject() {
   $main.innerHTML = `<div class="screen" style="display:grid;place-items:center;text-align:center;padding:40px"><div style="max-width:500px"><div class="screen-title">Inicializa tu primer proyecto</div><div class="screen-subtitle" style="margin:10px 0 22px">Detectaremos la rama principal, crearemos un clon administrado y validaremos Playwright.</div><button class="btn btn-primary" id="btn-init-project">Inicializar proyecto</button></div></div>`;
-  document.getElementById('btn-init-project').onclick = () => openProjectModal(true);
+  document.getElementById('btn-init-project').onclick = () => openProjectModal();
 }
-function openProjectModal(required) {
+function openProjectModal() {
   $overlay.hidden = false;
   $overlay.innerHTML = `<div class="modal" style="width:500px"><div class="modal-pad">
     <div class="modal-title">Inicializar proyecto</div>
@@ -545,7 +545,7 @@ function openProjectModal(required) {
     <label style="display:block;margin-top:14px;font-size:12px;font-weight:700">Repositorio Git</label>
     <input id="project-init-url" placeholder="https://servidor/equipo/pruebas.git" style="width:100%;margin-top:7px;padding:11px;border:1px solid #dbe3ef;border-radius:8px;box-sizing:border-box">
     <div id="project-init-error" style="display:none;margin-top:12px;color:#b91c1c;font-size:12px"></div>
-    <div class="modal-actions"><button class="btn btn-secondary" id="project-import-folder">Traer carpeta clonada</button>${required ? '' : '<button class="btn btn-secondary" id="project-init-cancel">Cancelar</button>'}<button class="btn btn-primary" id="project-init-confirm">Validar e inicializar</button></div>
+    <div class="modal-actions"><button class="btn btn-secondary" id="project-import-folder">Traer carpeta clonada</button><button class="btn btn-secondary" id="project-init-cancel">Cancelar</button><button class="btn btn-primary" id="project-init-confirm">Validar e inicializar</button></div>
   </div></div>`;
   const acceptProject = async (result) => {
     if (!result.ok) return false;
@@ -584,7 +584,7 @@ function openProjectModal(required) {
       }
     }
   };
-  if (!required) document.getElementById('project-init-cancel').onclick = closeModal;
+  document.getElementById('project-init-cancel').onclick = closeModal;
   document.getElementById('project-init-confirm').onclick = async () => {
     const button=document.getElementById('project-init-confirm'), error=document.getElementById('project-init-error');
     button.disabled=true; button.textContent='Clonando e instalando…'; error.style.display='none';
