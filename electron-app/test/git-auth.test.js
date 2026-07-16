@@ -38,3 +38,22 @@ test('lee el token en cada llamada, no al construirse', () => {
   token = 'llegó-después';
   assert.equal(auth.env().QA_GH_TOKEN, 'llegó-después');
 });
+
+test('el token llega a git a través del ayudante', () => {
+  const { spawnSync } = require('node:child_process');
+  const testToken = 'gho_prueba_123456';
+  const auth = createGitAuth(() => testToken);
+
+  const result = spawnSync('git', [
+    ...auth.args(),
+    'credential',
+    'fill'
+  ], {
+    input: 'protocol=https\nhost=github.com\n\n',
+    env: { ...process.env, ...auth.env() },
+    encoding: 'utf-8'
+  });
+
+  assert.ok(result.stdout.includes('username=x-access-token'));
+  assert.ok(result.stdout.includes(`password=${testToken}`));
+});
