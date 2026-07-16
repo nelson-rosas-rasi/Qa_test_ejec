@@ -15,6 +15,7 @@ let projects = [];
 const state = {
   screen: 'dashboard',
   project: null,
+  loadingProject: null,
   profiles: [],
   profile: null,
   profileMenuOpen: false,
@@ -137,8 +138,9 @@ function renderProjectSwitcher() {
 
   projects.forEach((project) => {
     const active = project.id === state.project;
+    const loading = state.loadingProject === project.id;
     const row = document.createElement('div');
-    row.className = 'project-item' + (active ? ' active' : '');
+    row.className = 'project-item' + (active ? ' active' : '') + (loading ? ' loading' : '');
 
     const dot = document.createElement('span');
     dot.className = 'dot';
@@ -150,23 +152,29 @@ function renderProjectSwitcher() {
     name.className = 'project-item-name';
     name.textContent = project.name;
     text.appendChild(name);
-    if (active) {
+    if (active || loading) {
       const branch = document.createElement('div');
       branch.className = 'project-item-branch';
-      branch.textContent = `rama ${project.defaultBranch}`;
+      branch.textContent = loading ? 'Trayendo cambios…' : `rama ${project.defaultBranch}`;
       text.appendChild(branch);
     }
 
     row.append(dot, text);
-    if (active) row.insertAdjacentHTML('beforeend', checkSvg(projectColor(project)));
+    if (active && !loading) row.insertAdjacentHTML('beforeend', checkSvg(projectColor(project)));
 
     row.onclick = async () => {
-      if (project.id === state.project) return;
-      if (!await loadProject(project.id)) return;
-      state.project = project.id;
+      if (project.id === state.project || state.loadingProject) return;
+      state.loadingProject = project.id;
       renderProjectSwitcher();
-      await loadProfiles();
-      renderScreen();
+      try {
+        if (!await loadProject(project.id)) return;
+        state.project = project.id;
+        await loadProfiles();
+        renderScreen();
+      } finally {
+        state.loadingProject = null;
+        renderProjectSwitcher();
+      }
     };
     list.appendChild(row);
   });

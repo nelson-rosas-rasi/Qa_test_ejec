@@ -91,6 +91,8 @@ button { font-family: inherit; }
 .project-item-text { flex: 1; min-width: 0; }
 .project-item-name { font-size: 12.5px; font-weight: 600; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .project-item-branch { font-size: 10.5px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.project-item.loading { cursor: progress; }
+.project-item.loading .project-item-branch { color: var(--accent); }
 .project-empty { font-size: 11.5px; color: #a2adbd; padding: 8px; }
 
 .project-add {
