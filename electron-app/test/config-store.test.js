@@ -59,3 +59,32 @@ test('listProjects devuelve el catálogo persistido', () => {
   store.setProject('erp', { name: 'ERP', defaultBranch: 'main' });
   assert.deepEqual(store.listProjects(), [{ id: 'erp', name: 'ERP', defaultBranch: 'main' }]);
 });
+
+test('getSetting devuelve undefined cuando la clave no existe', () => {
+  assert.equal(createConfigStore(tempDir()).getSetting('github'), undefined);
+});
+
+test('setSetting persiste una clave global sin pisar los proyectos', () => {
+  const dir = tempDir();
+  const store = createConfigStore(dir);
+  store.setProject('erp', { profile: 'demo' });
+  store.setSetting('github', { token: 'xyz' });
+  assert.deepEqual(createConfigStore(dir).getSetting('github'), { token: 'xyz' });
+  assert.deepEqual(createConfigStore(dir).getProject('erp'), { profile: 'demo' });
+});
+
+test('setProject no borra las claves globales', () => {
+  const dir = tempDir();
+  const store = createConfigStore(dir);
+  store.setSetting('github', { token: 'xyz' });
+  store.setProject('erp', { profile: 'demo' });
+  assert.deepEqual(createConfigStore(dir).getSetting('github'), { token: 'xyz' });
+});
+
+test('setSetting con null borra la clave', () => {
+  const dir = tempDir();
+  const store = createConfigStore(dir);
+  store.setSetting('github', { token: 'xyz' });
+  store.setSetting('github', null);
+  assert.equal(createConfigStore(dir).getSetting('github'), undefined);
+});

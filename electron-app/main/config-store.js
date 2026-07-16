@@ -25,6 +25,11 @@ function createConfigStore(dir) {
     }
   }
 
+  function writeAll(data) {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
+  }
+
   return {
     listProjects() {
       const data = readAll();
@@ -40,9 +45,21 @@ function createConfigStore(dir) {
       const data = readAll();
       if (!data.projects) data.projects = {};
       data.projects[projectId] = { ...data.projects[projectId], ...patch };
-      fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
+      writeAll(data);
       return data.projects[projectId];
+    },
+
+    /** Claves de alcance global (no ligadas a un proyecto), en la raíz del JSON. */
+    getSetting(key) {
+      return readAll()[key];
+    },
+
+    setSetting(key, value) {
+      const data = readAll();
+      if (value === null || value === undefined) delete data[key];
+      else data[key] = value;
+      writeAll(data);
+      return data[key];
     },
   };
 }
