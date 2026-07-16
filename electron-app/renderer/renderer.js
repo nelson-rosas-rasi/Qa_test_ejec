@@ -49,17 +49,22 @@ async function init() {
   wireApiEvents();
   projects = await api.listProjects();
   state.project = projects[0]?.id || null;
+  state.loadingProject = state.project;
   renderProjectSwitcher();
   if (!state.project) {
     renderSidebarStatus(); renderEmptyProject(); return;
   }
-  if (!await loadProject(state.project)) return;
-  await loadProfiles();
-  const sync = await api.checkSyncStatus();
-  state.updateAvailable = sync.updateAvailable;
-  renderSidebarStatus();
-
-  renderScreen();
+  try {
+    if (!await loadProject(state.project)) return;
+    await loadProfiles();
+    const sync = await api.checkSyncStatus();
+    state.updateAvailable = sync.updateAvailable;
+    renderSidebarStatus();
+    renderScreen();
+  } finally {
+    state.loadingProject = null;
+    renderProjectSwitcher();
+  }
 }
 
 function wireApiEvents() {
