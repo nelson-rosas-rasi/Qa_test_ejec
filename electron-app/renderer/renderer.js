@@ -19,6 +19,9 @@ const state = {
   profiles: [],
   profile: null,
   profileMenuOpen: false,
+  github: { connected: false },
+  githubDevice: null,     // { userCode, verificationUri } mientras se conecta
+  githubError: null,
   updateAvailable: true,
   testTree: [],
   selected: new Set(),
@@ -47,6 +50,7 @@ async function init() {
   wireTitlebar();
   wireSidebar();
   wireApiEvents();
+  await loadGithubStatus();
   projects = await api.listProjects();
   state.project = projects[0]?.id || null;
   state.loadingProject = state.project;
@@ -204,11 +208,24 @@ async function loadProfiles() {
   renderProfileSwitcher();
 }
 
+async function loadGithubStatus() {
+  state.github = await api.getGithubStatus();
+  renderProfileSwitcher();
+  renderSidebarStatus();
+}
+
 function renderProfileSwitcher() {
   const active = state.profiles.find((p) => p.id === state.profile);
-  document.getElementById('profile-avatar').textContent = active ? initials(active.name) : '··';
+  document.getElementById('profile-avatar').firstChild.textContent = active ? initials(active.name) : '··';
   document.getElementById('profile-name').textContent = active ? active.name : 'Sin perfil';
   document.getElementById('profile-role').textContent = active ? active.role : 'Elige un perfil';
+
+  document.getElementById('github-dot').className = `github-dot${state.github.connected ? ' connected' : ''}`;
+
+  const warning = document.getElementById('github-warning');
+  warning.hidden = state.github.connected;
+  warning.innerHTML = `<div class="title">⚠ Sin cuenta conectada</div><div class="action">Conectar cuenta</div>`;
+  warning.onclick = (e) => { e.stopPropagation(); openGithubModal(); };
 
   const menu = document.getElementById('profile-menu');
   menu.hidden = !state.profileMenuOpen;
@@ -232,6 +249,23 @@ function renderProfileSwitcher() {
     };
     menu.appendChild(row);
   });
+
+  const separator = document.createElement('div');
+  separator.className = 'profile-menu-sep';
+  menu.appendChild(separator);
+
+  const githubRow = document.createElement('div');
+  githubRow.className = 'profile-menu-item';
+  githubRow.innerHTML = state.github.connected
+    ? `<div style="flex:1;min-width:0;"><div class="label">Desconectar cuenta</div><div class="sub">Conectado como ${state.github.login || ''}</div></div>`
+    : `<div style="flex:1;min-width:0;"><div class="label">Conectar cuenta de GitHub</div><div class="sub">Necesaria para traer las pruebas</div></div>`;
+  githubRow.onclick = (e) => {
+    e.stopPropagation();
+    state.profileMenuOpen = false;
+    if (state.github.connected) openGithubDisconnectModal();
+    else openGithubModal();
+  };
+  menu.appendChild(githubRow);
 }
 
 function renderSidebarStatus() {
