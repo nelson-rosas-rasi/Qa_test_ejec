@@ -14,6 +14,25 @@ npm install
 npm start
 ```
 
+## Cuenta de GitHub
+
+Los repositorios de pruebas son privados, así que la app necesita la cuenta de
+GitHub del QA para traerlos. Se conecta desde el perfil del sidebar: la app
+muestra un código, lo apruebas en github.com y listo. El token se guarda cifrado
+con `safeStorage` (DPAPI en Windows, atado a tu cuenta de Windows) y nunca se
+escribe en claro ni queda en el `.git/config` del repositorio.
+
+Para desarrollo hace falta el `client_id` de la OAuth App de la organización:
+
+```
+QA_GITHUB_CLIENT_ID=Iv1.xxxx npm start
+```
+
+Sin esa variable, conectar la cuenta responde que la app no está configurada.
+
+Desconectar sólo olvida la cuenta en ese equipo; para revocar el permiso de
+verdad hay que entrar a github.com/settings/applications.
+
 ## Estructura
 
 ```
