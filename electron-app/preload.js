@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld('qa', {
   listProfiles: (projectId) => ipcRenderer.invoke('profiles:list', projectId),
   getActiveProfile: (projectId) => ipcRenderer.invoke('profiles:active', projectId),
   selectProfile: (projectId, profileId) => ipcRenderer.invoke('profiles:select', projectId, profileId),
+  getProfileSchema: (projectId) => ipcRenderer.invoke('profiles:schema', projectId),
+  saveProfile: (projectId, id, values) => ipcRenderer.invoke('profiles:save', projectId, id, values),
 
   // cuenta de GitHub
   getGithubStatus: () => ipcRenderer.invoke('github:status'),

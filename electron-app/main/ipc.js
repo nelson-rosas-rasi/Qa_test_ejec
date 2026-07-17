@@ -4,7 +4,9 @@ const { app, ipcMain, dialog, safeStorage, shell } = require('electron');
 
 const { appError } = require('./errors');
 const { createConfigStore } = require('./config-store');
-const { listProfiles } = require('./profiles');
+const { readSchema } = require('./profiles');
+const { createProfileStore } = require('./profiles/store');
+const { writeEnv, sweep } = require('./profiles/materialize');
 const { createProjectManager, uniqueProjectId } = require('./projects');
 const { locatePlaywrightCli } = require('./playwright/locate');
 const { listTests } = require('./playwright/list-tests');
@@ -36,6 +38,27 @@ function registerIpc(getWindow) {
   const account = createAccountStore({ store, safeStorage });
   const auth = createGitAuth(() => account.load()?.token || null);
   const projects = createProjectManager({ projectsDir: path.join(userData, 'projects'), auth });
+  const profileStore = createProfileStore({ dir: path.join(userData, 'perfiles'), safeStorage });
+
+  /** Escribe en el clon el .env del perfil activo del proyecto (o solo barre si no hay). */
+  function materializeActive(projectId) {
+    const project = store.getProject(projectId);
+    if (!project.repoPath || !fs.existsSync(project.repoPath)) return;
+    sweep(project.repoPath);
+    const values = project.profile ? profileStore.load(projectId, project.profile) : null;
+    if (values) writeEnv({ repoPath: project.repoPath, id: project.profile, values });
+  }
+
+  /** Al arrancar y al cerrar: barre restos de .env en claro de todos los clones. */
+  function sweepAll() {
+    for (const project of store.listProjects()) {
+      if (project.repoPath && fs.existsSync(project.repoPath)) sweep(project.repoPath);
+    }
+  }
+
+  sweepAll();                         // limpia restos de una sesión que murió mal
+  app.on('before-quit', sweepAll);    // limpia al salir
+
   let currentRun = null;
   let currentDeviceFlow = null;
   const showError = (err) => dialog.showErrorBox('QA Test Runner', err.message || String(err));
@@ -171,12 +194,25 @@ function registerIpc(getWindow) {
   });
 
   /* ---------- perfiles ---------- */
-  ipcMain.handle('profiles:list', async (_event, projectId) => {
+  ipcMain.handle('profiles:list', (_event, projectId) => profileStore.list(projectId));
+
+  ipcMain.handle('profiles:schema', async (_event, projectId) => {
     try {
-      return listProfiles(await ensureRepoPath(projectId));
+      return { ok: true, fields: readSchema(await ensureRepoPath(projectId)) };
     } catch (err) {
-      showError(err);
-      return [];
+      return { ok: false, error: err.message || String(err), code: err.code };
+    }
+  });
+
+  ipcMain.handle('profiles:save', (_event, projectId, id, values) => {
+    try {
+      const finalId = id || uniqueProjectId(values.QA_NOMBRE || 'perfil', new Set(profileStore.list(projectId).map((p) => p.id)));
+      profileStore.save(projectId, finalId, values);
+      store.setProject(projectId, { profile: finalId });
+      materializeActive(projectId);
+      return { ok: true, profile: { id: finalId, name: values.QA_NOMBRE || finalId, role: values.QA_CARGO || 'QA' } };
+    } catch (err) {
+      return { ok: false, error: err.message || String(err), code: err.code };
     }
   });
 
@@ -184,6 +220,7 @@ function registerIpc(getWindow) {
 
   ipcMain.handle('profiles:select', (_event, projectId, profileId) => {
     store.setProject(projectId, { profile: profileId });
+    materializeActive(projectId);
     return profileId;
   });
 
@@ -193,6 +230,7 @@ function registerIpc(getWindow) {
     const empty = { ok: false, stopped: false, summary: { passed: 0, failed: 0, skipped: 0, durationMs: 0 } };
     try {
       const repoPath = await ensureRepoPath(projectId);
+      materializeActive(projectId);   // asegura el .env del perfil activo antes de correr
       currentRun = runTests(
         {
           repoPath,
