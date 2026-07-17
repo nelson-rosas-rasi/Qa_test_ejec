@@ -263,6 +263,12 @@ function renderProfileSwitcher() {
   separator.className = 'profile-menu-sep';
   menu.appendChild(separator);
 
+  const addRow = document.createElement('div');
+  addRow.className = 'profile-menu-item';
+  addRow.innerHTML = `<div style="flex:1;min-width:0;"><div class="label">Añadir perfil</div><div class="sub">Otro usuario para este proyecto</div></div>`;
+  addRow.onclick = (e) => { e.stopPropagation(); state.profileMenuOpen = false; openProfileModal(); };
+  menu.appendChild(addRow);
+
   const githubRow = document.createElement('div');
   githubRow.className = 'profile-menu-item';
   githubRow.innerHTML = state.github.connected
@@ -304,6 +310,16 @@ function renderSidebarStatus() {
    ============================================================ */
 function renderScreen() {
   if (!state.project) return renderEmptyProject();
+  if (state.project && state.profiles.length === 0) {
+    $main.innerHTML = `<div class="screen" style="display:grid;place-items:center;text-align:center;padding:40px">
+      <div style="max-width:460px">
+        <div class="screen-title">Crea tu perfil para este proyecto</div>
+        <div class="screen-subtitle" style="margin:10px 0 22px">Necesitamos tu usuario y tus datos para ejecutar las pruebas con tu cuenta.</div>
+        <button class="btn btn-primary" id="btn-create-profile">Crear perfil</button>
+      </div></div>`;
+    document.getElementById('btn-create-profile').onclick = () => openProfileModal();
+    return;
+  }
   if (state.screen === 'dashboard') renderDashboard();
   else if (state.screen === 'live') renderLive();
   else if (state.screen === 'results') renderResults();
@@ -674,6 +690,62 @@ function openProjectModal() {
     const result=await api.initializeProject({name:document.getElementById('project-init-name').value,repoUrl:document.getElementById('project-init-url').value});
     if(!result.ok){error.textContent=result.error;error.style.display='block';button.disabled=false;button.textContent='Validar e inicializar';return;}
     await acceptProject(result);
+  };
+}
+
+/** Campos cuyo valor se enmascara. Heurística genérica, no específica del repo. */
+const SECRET_KEY = /(PASSWORD|TOKEN|SECRET)/i;
+
+async function openProfileModal() {
+  const schema = await api.getProfileSchema(state.project);
+  if (!schema.ok) {
+    $overlay.hidden = false;
+    $overlay.innerHTML = `<div class="modal" style="width:440px"><div class="modal-pad">
+      <div class="modal-title">No se puede crear el perfil</div>
+      <div class="modal-sub" style="margin-top:8px">${schema.error || 'No fue posible leer la configuración del proyecto.'}</div>
+      <div class="modal-actions"><button class="btn btn-primary" id="profile-err-close">Entendido</button></div>
+    </div></div>`;
+    document.getElementById('profile-err-close').onclick = () => closeModal();
+    return;
+  }
+  const fields = schema.fields;
+
+  $overlay.hidden = false;
+  $overlay.innerHTML = `<div class="modal" style="width:560px;max-height:82vh;display:flex;flex-direction:column">
+    <div class="modal-pad" style="overflow:auto">
+      <div class="modal-title">Crea tu perfil para este proyecto</div>
+      <div class="modal-sub">La app necesita tus datos para ejecutar las pruebas con tu usuario.</div>
+      <div id="profile-fields" style="margin-top:16px">
+        ${fields.map((f, i) => `
+          <label style="display:block;margin-top:12px;font-size:12px;font-weight:700">${f.key}</label>
+          <input id="pf-${i}" type="${SECRET_KEY.test(f.key) ? 'password' : 'text'}"
+                 value="${String(f.value).replace(/"/g, '&quot;')}"
+                 style="width:100%;margin-top:6px;padding:10px;border:1px solid #dbe3ef;border-radius:8px;box-sizing:border-box">
+          ${f.help ? `<div style="margin-top:4px;font-size:11px;color:#94a3b8">${f.help}</div>` : ''}
+        `).join('')}
+      </div>
+      <div id="profile-error" style="display:none;margin-top:12px;color:#b91c1c;font-size:12px"></div>
+    </div>
+    <div class="modal-actions" style="padding:14px 20px;border-top:1px solid #eef2f7">
+      <button class="btn btn-secondary" id="profile-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="profile-save">Guardar perfil</button>
+    </div>
+  </div>`;
+
+  document.getElementById('profile-cancel').onclick = () => closeModal();
+  document.getElementById('profile-save').onclick = async () => {
+    const values = {};
+    fields.forEach((f, i) => { values[f.key] = document.getElementById(`pf-${i}`).value; });
+    const result = await api.saveProfile(state.project, null, values);
+    if (!result.ok) {
+      const err = document.getElementById('profile-error');
+      err.textContent = result.error || 'No fue posible guardar el perfil.';
+      err.style.display = 'block';
+      return;
+    }
+    closeModal();
+    await loadProfiles();
+    renderScreen();
   };
 }
 
@@ -1146,6 +1218,11 @@ function createBrowserStub() {
     },
     async getActiveProfile() { return 'demo'; },
     async selectProfile(_projectId, profileId) { return profileId; },
+    async getProfileSchema() { return { ok: true, fields: [
+      { key: 'TEST_USERNAME', value: 'demo', help: 'Tu usuario del ERP' },
+      { key: 'TEST_PASSWORD', value: '', help: '' },
+    ] }; },
+    async saveProfile(_p, _id, values) { return { ok: true, profile: { id: 'demo', name: values.QA_NOMBRE || 'Demo', role: values.QA_CARGO || 'QA' } }; },
     async getGithubStatus() { return { connected: true, login: 'maria-gomez', name: 'María Gómez' }; },
     async connectGithub() { return { ok: true, account: { login: 'maria-gomez' } }; },
     async cancelGithubConnect() { return { ok: true }; },
