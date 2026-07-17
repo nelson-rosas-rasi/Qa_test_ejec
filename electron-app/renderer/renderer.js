@@ -218,6 +218,11 @@ async function loadGithubStatus() {
   renderSidebarStatus();
 }
 
+/** Todo lo que va al repositorio necesita cuenta; lo local (historial, resultados) no. */
+function needsGithub() {
+  return !state.github.connected;
+}
+
 function renderProfileSwitcher() {
   const active = state.profiles.find((p) => p.id === state.profile);
   document.getElementById('profile-avatar').firstChild.textContent = active ? initials(active.name) : '··';
@@ -274,6 +279,12 @@ function renderProfileSwitcher() {
 
 function renderSidebarStatus() {
   const el = document.getElementById('sync-pill');
+  if (needsGithub()) {
+    el.className = 'sync-pill';
+    el.innerHTML = '<span class="txt">Conecta tu cuenta para actualizar</span>';
+    el.onclick = () => openGithubModal();
+    return;
+  }
   if (!state.project) { el.className = 'sync-pill'; el.innerHTML = '<span class="txt">Sin proyecto inicializado</span>'; el.onclick = null; return; }
   if (state.updateAvailable) {
     el.className = 'sync-pill update';
@@ -514,6 +525,7 @@ function filterTree(query) {
    RUN OPTIONS MODAL
    ============================================================ */
 function openRunOptions(target) {
+  if (needsGithub()) { openGithubModal(); return; }
   state.runTarget = target;
   state.showRunOptionsModal = true;
   renderRunOptionsModal();
@@ -600,9 +612,13 @@ function stopIcon() {
 
 function renderEmptyProject() {
   $main.innerHTML = `<div class="screen" style="display:grid;place-items:center;text-align:center;padding:40px"><div style="max-width:500px"><div class="screen-title">Inicializa tu primer proyecto</div><div class="screen-subtitle" style="margin:10px 0 22px">Detectaremos la rama principal, crearemos un clon administrado y validaremos Playwright.</div><button class="btn btn-primary" id="btn-init-project">Inicializar proyecto</button></div></div>`;
-  document.getElementById('btn-init-project').onclick = () => openProjectModal();
+  document.getElementById('btn-init-project').onclick = () => {
+    if (needsGithub()) { openGithubModal(); return; }
+    openProjectModal();
+  };
 }
 function openProjectModal() {
+  if (needsGithub()) { openGithubModal(); return; }
   $overlay.hidden = false;
   $overlay.innerHTML = `<div class="modal" style="width:500px"><div class="modal-pad">
     <div class="modal-title">Inicializar proyecto</div>
