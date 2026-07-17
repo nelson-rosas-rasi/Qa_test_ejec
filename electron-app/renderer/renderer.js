@@ -84,6 +84,10 @@ function wireApiEvents() {
     state.runResults[entry.id] = entry.status;
     if (state.screen === 'live') renderLive();
   });
+  api.onGithubDeviceCode((device) => {
+    state.githubDevice = device;
+    renderGithubModal();
+  });
 }
 
 async function loadProject(projectId) {
@@ -657,6 +661,77 @@ function openProjectModal() {
   };
 }
 
+function openGithubModal() {
+  state.githubDevice = null;
+  state.githubError = null;
+  $overlay.hidden = false;
+  renderGithubModal();
+  api.connectGithub().then((result) => {
+    if (result.ok) {
+      closeModal();
+      loadGithubStatus();
+      return;
+    }
+    if (result.code === 'GITHUB_CONNECT_CANCELLED') return;
+    state.githubError = result.error || 'No fue posible conectar la cuenta.';
+    renderGithubModal();
+  });
+}
+
+function renderGithubModal() {
+  if ($overlay.hidden) return;
+  const device = state.githubDevice;
+  $overlay.innerHTML = `<div class="modal" style="width:460px"><div class="modal-pad">
+    <div class="modal-title">Conectar tu cuenta de GitHub</div>
+    <div class="modal-sub">La app necesita tu cuenta para traer las pruebas del equipo.</div>
+    ${device ? `
+      <div style="margin-top:20px;font-size:13px">1. Copia este código:</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
+        <div style="flex:1;text-align:center;padding:14px;border:1px dashed #cbd5e1;border-radius:8px;font-size:22px;font-weight:700;letter-spacing:3px">${device.userCode}</div>
+        <button class="btn btn-secondary" id="github-copy">Copiar</button>
+      </div>
+      <div style="margin-top:14px;font-size:13px">2. Apruébalo en GitHub, que se abrirá en tu navegador.</div>
+      <div style="margin-top:16px;font-size:12px;color:#64748b">Esperando tu aprobación…</div>
+    ` : `<div style="margin-top:24px;font-size:13px;color:#64748b">Pidiendo el código a GitHub…</div>`}
+    ${state.githubError ? `<div style="margin-top:12px;color:#b91c1c;font-size:12px">${state.githubError}</div>` : ''}
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="github-cancel">Cancelar</button>
+      ${device ? `<button class="btn btn-primary" id="github-open">Abrir GitHub</button>` : ''}
+    </div>
+  </div></div>`;
+
+  document.getElementById('github-cancel').onclick = async () => {
+    await api.cancelGithubConnect();
+    closeModal();
+  };
+  if (device) {
+    document.getElementById('github-copy').onclick = () => navigator.clipboard.writeText(device.userCode);
+    document.getElementById('github-open').onclick = () => window.open(device.verificationUri, '_blank');
+  }
+}
+
+function openGithubDisconnectModal() {
+  $overlay.hidden = false;
+  $overlay.innerHTML = `<div class="modal" style="width:460px"><div class="modal-pad">
+    <div class="modal-title">Desconectar tu cuenta</div>
+    <div class="modal-sub">Se olvidará tu cuenta en este equipo y no podrás traer ni actualizar proyectos hasta conectarla otra vez.</div>
+    <div style="margin-top:16px;font-size:12px;color:#64748b">
+      Tu cuenta seguirá autorizada en GitHub. Para quitarle el permiso del todo, entra a
+      <span style="color:#2563eb">github.com/settings/applications</span>.
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="github-disconnect-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="github-disconnect-confirm">Desconectar</button>
+    </div>
+  </div></div>`;
+  document.getElementById('github-disconnect-cancel').onclick = () => closeModal();
+  document.getElementById('github-disconnect-confirm').onclick = async () => {
+    await api.disconnectGithub();
+    closeModal();
+    await loadGithubStatus();
+  };
+}
+
 function closeModal() {
   $overlay.hidden = true;
   $overlay.innerHTML = '';
@@ -1055,6 +1130,11 @@ function createBrowserStub() {
     },
     async getActiveProfile() { return 'demo'; },
     async selectProfile(_projectId, profileId) { return profileId; },
+    async getGithubStatus() { return { connected: true, login: 'maria-gomez', name: 'María Gómez' }; },
+    async connectGithub() { return { ok: true, account: { login: 'maria-gomez' } }; },
+    async cancelGithubConnect() { return { ok: true }; },
+    async disconnectGithub() { return { ok: true }; },
+    onGithubDeviceCode() {},
     async startRun({ testIds }) {
       for (const id of testIds) {
         listeners.result.forEach((cb) => cb({ id, status: 'running' }));
