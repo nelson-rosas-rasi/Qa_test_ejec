@@ -679,7 +679,16 @@ const SECRET_KEY = /(PASSWORD|TOKEN|SECRET)/i;
 
 async function openProfileModal() {
   const schema = await api.getProfileSchema(state.project);
-  if (!schema.ok) { showError(schema.error); return; }
+  if (!schema.ok) {
+    $overlay.hidden = false;
+    $overlay.innerHTML = `<div class="modal" style="width:440px"><div class="modal-pad">
+      <div class="modal-title">No se puede crear el perfil</div>
+      <div class="modal-sub" style="margin-top:8px">${schema.error || 'No fue posible leer la configuración del proyecto.'}</div>
+      <div class="modal-actions"><button class="btn btn-primary" id="profile-err-close">Entendido</button></div>
+    </div></div>`;
+    document.getElementById('profile-err-close').onclick = () => closeModal();
+    return;
+  }
   const fields = schema.fields;
 
   $overlay.hidden = false;
