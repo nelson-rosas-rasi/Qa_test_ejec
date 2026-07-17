@@ -10,6 +10,7 @@ function createWindow() {
     height: 860,
     minWidth: 1040,
     minHeight: 640,
+    icon: path.join(__dirname, 'renderer', 'assets', 'runqa-icon.png'),
     frame: false, // usamos una barra de título propia (ver renderer/index.html)
     backgroundColor: '#ffffff',
     webPreferences: {
@@ -21,6 +22,8 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
+
+app.setAppUserModelId('com.tuempresa.qatestrunner');
 
 app.whenReady().then(() => {
   registerIpc(() => mainWindow);

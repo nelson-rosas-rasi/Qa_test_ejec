@@ -18,13 +18,19 @@
     "appId": "com.tuempresa.qatestrunner",
     "productName": "RunQA",
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "renderer/assets/runqa-icon.ico"
+    },
+    "nsis": {
+      "createDesktopShortcut": true,
+      "shortcutName": "RunQA"
     },
     "mac": {
       "target": "dmg"
     },
     "linux": {
-      "target": "AppImage"
+      "target": "AppImage",
+      "icon": "renderer/assets/runqa-icon.png"
     },
     "asarUnpack": [
       "main/playwright/ndjson-reporter.cjs"

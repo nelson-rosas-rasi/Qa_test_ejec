@@ -49,16 +49,16 @@ button { font-family: inherit; }
 
 /* ===== TITLEBAR ===== */
 .titlebar {
-  height: 40px; flex: none; -webkit-app-region: drag;
+  height: 44px; flex: none; -webkit-app-region: drag;
   display: flex; align-items: center; justify-content: space-between;
   background: #eef1f6; border-bottom: 1px solid #dde3ec; padding-left: 14px;
 }
 .titlebar-brand { display: flex; align-items: center; gap: 9px; }
 .titlebar-logo {
-  width: 24px; height: 24px; border-radius: 7px; overflow: hidden; flex: none;
-  background: #fff; box-shadow: 0 1px 3px rgba(15,23,42,.16);
+  width: 34px; height: 34px; overflow: hidden; flex: none;
+  background: transparent;
 }
-.titlebar-logo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.titlebar-logo img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .titlebar-name { font-size: 12.5px; font-weight: 600; color: #334155; }
 .titlebar-version { font-size: 11px; color: #94a3b8; font-weight: 500; }
 .titlebar-controls { display: flex; height: 100%; -webkit-app-region: no-drag; }
