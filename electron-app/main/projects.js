@@ -63,6 +63,17 @@ function friendlyCommandError(code, message, err) {
 /** Por defecto no inyecta nada: sin cuenta conectada, git se invoca como siempre. */
 const NO_AUTH = { args: () => [], env: () => ({}) };
 
+/**
+ * Node >=20.12 (arreglo de CVE-2024-27980) se niega a ejecutar archivos .cmd/.bat
+ * sin shell en Windows, y npm en Windows *es* npm.cmd: sin esto, `spawn EINVAL`.
+ *
+ * Pasar por el shell concatena los argumentos en vez de escaparlos, así que sólo
+ * es seguro porque los de npm son constantes (`ci`, `--no-audit`, `--no-fund`) y
+ * la ruta del repo viaja en `cwd`, no en la línea de comandos. Si algún día un
+ * argumento pasa a venir del usuario, esto deja de valer.
+ */
+const needsShell = (command) => /\.(cmd|bat)$/i.test(command);
+
 function createProjectManager({ projectsDir, gitPath = 'git', npmPath = process.platform === 'win32' ? 'npm.cmd' : 'npm', run = runFile, auth = NO_AUTH }) {
   const git = (args, cwd) => run(gitPath, [...auth.args(), ...args], {
     ...(cwd ? { cwd } : {}),
@@ -74,7 +85,7 @@ function createProjectManager({ projectsDir, gitPath = 'git', npmPath = process.
     if (!currentHash) throw appError('LOCKFILE_NOT_FOUND', 'El proyecto necesita un package-lock.json para instalar dependencias de forma reproducible.');
     const playwrightCli = path.join(repoPath, 'node_modules', 'playwright', 'cli.js');
     if (currentHash !== previousHash || !fs.existsSync(playwrightCli)) {
-      try { await run(npmPath, ['ci', '--no-audit', '--no-fund'], { cwd: repoPath }); }
+      try { await run(npmPath, ['ci', '--no-audit', '--no-fund'], { cwd: repoPath, shell: needsShell(npmPath) }); }
       catch (err) { throw friendlyCommandError('DEPENDENCIES_FAILED', 'No fue posible instalar las dependencias del proyecto.', err); }
     }
     if (!fs.existsSync(playwrightCli)) throw appError('PLAYWRIGHT_NOT_INSTALLED', 'El proyecto no incluye Playwright entre sus dependencias.');

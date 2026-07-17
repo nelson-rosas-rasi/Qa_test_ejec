@@ -182,3 +182,60 @@ test('otros fallos de git conservan su mensaje de siempre', async () => {
     (err) => err.code === 'REPOSITORY_UNAVAILABLE',
   );
 });
+test('npm.cmd se invoca con shell: Node >=20.12 se niega a ejecutar .cmd sin él', async () => {
+  const projectsDir = temp();
+  const sourcePath = temp();
+  fs.mkdirSync(path.join(sourcePath, '.git'));
+  const calls = [];
+  const run = async (command, args, options = {}) => {
+    calls.push({ command, args, options });
+    if (args.includes('remote') && args.includes('get-url')) return { stdout: 'https://example.test/qa.git\n', stderr: '' };
+    if (args.includes('ls-remote')) return { stdout: 'ref: refs/heads/main\tHEAD\nabc\tHEAD\n', stderr: '' };
+    if (args.includes('clone')) {
+      const destination = args.at(-1);
+      fs.mkdirSync(destination, { recursive: true });
+      fs.writeFileSync(path.join(destination, 'package.json'), '{}');
+      fs.writeFileSync(path.join(destination, 'package-lock.json'), '{"lockfileVersion":3}');
+      return { stdout: '', stderr: '' };
+    }
+    if (args[0] === 'ci') {
+      fs.mkdirSync(path.join(options.cwd, 'node_modules', 'playwright'), { recursive: true });
+      fs.writeFileSync(path.join(options.cwd, 'node_modules', 'playwright', 'cli.js'), '');
+      return { stdout: '', stderr: '' };
+    }
+    if (args.includes('rev-parse')) return { stdout: 'abc123\n', stderr: '' };
+    return { stdout: '', stderr: '' };
+  };
+  await createProjectManager({ projectsDir, run, npmPath: 'npm.cmd' }).importExisting({ id: 'local', sourcePath });
+  const npmCall = calls.find((call) => call.command === 'npm.cmd');
+  assert.equal(npmCall.options.shell, true);
+});
+
+test('un ejecutable de verdad no se invoca con shell', async () => {
+  const projectsDir = temp();
+  const sourcePath = temp();
+  fs.mkdirSync(path.join(sourcePath, '.git'));
+  const calls = [];
+  const run = async (command, args, options = {}) => {
+    calls.push({ command, args, options });
+    if (args.includes('remote') && args.includes('get-url')) return { stdout: 'https://example.test/qa.git\n', stderr: '' };
+    if (args.includes('ls-remote')) return { stdout: 'ref: refs/heads/main\tHEAD\nabc\tHEAD\n', stderr: '' };
+    if (args.includes('clone')) {
+      const destination = args.at(-1);
+      fs.mkdirSync(destination, { recursive: true });
+      fs.writeFileSync(path.join(destination, 'package.json'), '{}');
+      fs.writeFileSync(path.join(destination, 'package-lock.json'), '{"lockfileVersion":3}');
+      return { stdout: '', stderr: '' };
+    }
+    if (args[0] === 'ci') {
+      fs.mkdirSync(path.join(options.cwd, 'node_modules', 'playwright'), { recursive: true });
+      fs.writeFileSync(path.join(options.cwd, 'node_modules', 'playwright', 'cli.js'), '');
+      return { stdout: '', stderr: '' };
+    }
+    if (args.includes('rev-parse')) return { stdout: 'abc123\n', stderr: '' };
+    return { stdout: '', stderr: '' };
+  };
+  await createProjectManager({ projectsDir, run, npmPath: 'npm' }).importExisting({ id: 'local', sourcePath });
+  assert.notEqual(calls.find((call) => call.command === 'npm').options.shell, true);
+  assert.notEqual(calls.find((call) => call.command === 'git').options.shell, true);
+});
