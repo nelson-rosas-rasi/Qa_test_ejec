@@ -52,6 +52,45 @@ test('prepara el clon en detached HEAD de la rama remota', async () => {
   ]);
 });
 
+test('checkStatus reporta cuántos commits hay por traer del remoto', async () => {
+  const projectsDir = temp();
+  const repoPath = path.join(projectsDir, 'erp');
+  fs.mkdirSync(path.join(repoPath, '.git'), { recursive: true });
+  const calls = [];
+  const run = async (command, args, options = {}) => {
+    calls.push({ args, cwd: options.cwd });
+    if (args[0] === 'rev-parse' && args[1] === 'HEAD') return { stdout: 'local111\n', stderr: '' };
+    if (args[0] === 'rev-parse') return { stdout: 'remote222\n', stderr: '' };
+    if (args[0] === 'rev-list') return { stdout: '3\n', stderr: '' };
+    return { stdout: '', stderr: '' };
+  };
+  const manager = createProjectManager({ projectsDir, run });
+  const status = await manager.checkStatus({ repoPath, repoUrl: 'https://example.test/qa.git', defaultBranch: 'main' });
+  assert.equal(status.updateAvailable, true);
+  assert.equal(status.behind, 3);
+  assert.deepEqual(calls.map((call) => call.args), [
+    ['fetch', '--prune', 'origin', '+refs/heads/main:refs/remotes/origin/main'],
+    ['rev-parse', 'HEAD'],
+    ['rev-parse', 'refs/remotes/origin/main'],
+    ['rev-list', '--count', 'HEAD..refs/remotes/origin/main'],
+  ]);
+});
+
+test('checkStatus marca "al día" cuando local y remoto coinciden', async () => {
+  const projectsDir = temp();
+  const repoPath = path.join(projectsDir, 'erp');
+  fs.mkdirSync(path.join(repoPath, '.git'), { recursive: true });
+  const run = async (command, args) => {
+    if (args[0] === 'rev-parse') return { stdout: 'samecommit\n', stderr: '' };
+    if (args[0] === 'rev-list') return { stdout: '0\n', stderr: '' };
+    return { stdout: '', stderr: '' };
+  };
+  const status = await createProjectManager({ projectsDir, run })
+    .checkStatus({ repoPath, repoUrl: 'https://example.test/qa.git', defaultBranch: 'main' });
+  assert.equal(status.updateAvailable, false);
+  assert.equal(status.behind, 0);
+});
+
 test('importa un clon local sin modificar la carpeta original', async () => {
   const projectsDir = temp();
   const sourcePath = temp();

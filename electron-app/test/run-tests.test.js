@@ -78,3 +78,29 @@ test('stop() corta una corrida larga', { timeout: 120_000 }, async () => {
   assert.equal(outcome.stopped, true);
   assert.ok(Date.now() - started < 45_000, 'no debe esperar los 60s de la prueba');
 });
+
+test('resuelve con el detalle por test', { timeout: 120_000 }, async () => {
+  const { promise } = runTests(
+    {
+      repoPath: SAMPLE_REPO,
+      cliPath: locatePlaywrightCli(SAMPLE_REPO),
+      reporters: [REPORTER],
+      testIds: ['alpha'],
+      runAll: false,
+    },
+    () => {},
+  );
+
+  const { tests } = await promise;
+
+  assert.equal(tests.length, 4, 'un elemento por test (2 pasan, 1 falla, 1 se omite)');
+  const failed = tests.find((t) => t.status === 'failed');
+  assert.ok(failed, 'debe haber un test fallido');
+  // Nota: 'falla a propósito' es el *título* del test (mixed.spec.ts), no el texto del error;
+  // el ndjson-reporter solo vuelca `result.error.message` (verificado con --reporter=json:
+  // "Error: expect(received).toBe(expected) // Object.is equality"). Se valida el contenido
+  // real del mensaje de fallo en vez de una subcadena que nunca aparece ahí.
+  assert.ok(failed.error && failed.error.includes('toBe'), `error inesperado: ${failed.error}`);
+  assert.ok(tests.every((t) => typeof t.id === 'string' && typeof t.name === 'string'));
+  assert.ok(tests.some((t) => t.status === 'passed'));
+});

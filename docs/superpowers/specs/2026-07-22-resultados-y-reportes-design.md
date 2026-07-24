@@ -287,7 +287,7 @@ No hace falta un barrido nuevo: el reporte no contiene secretos (a diferencia de
 
 | Código | Situación | Mensaje/efecto |
 |---|---|---|
-| `N8N_NOT_CONFIGURED` | Sin URL de n8n al pedir documentación | "Configura la dirección para generar la documentación." + ofrecer Guardar solo local |
+| `N8N_NOT_CONFIGURED` | Sin URL de n8n al **reenviar** documentación (`results:resendN8n`) | "Configura la dirección para generar la documentación." En `results:save` NO se rechaza: la corrida se **guarda local igual** y se devuelve `n8nSkipped:true` para avisar en el detalle. |
 | `RUN_EXPIRED` | `results:save` con un `runId` que ya fue pisado | "Esta corrida ya no está disponible para guardar." |
 | n8n falla/timeout | El POST no responde ok | Corrida **guardada local** con `n8n.ok=false`; botón **Reenviar** en el registro |
 | `report=null` | No existía `playwright-report/` al guardar | Se guarda el JSON; "Abrir reporte" deshabilitado |

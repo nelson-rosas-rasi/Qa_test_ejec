@@ -16,14 +16,20 @@ function buildArgs({ cliPath, testIds, runAll, reporters, visualMode = false, st
 function killTree(child) {
   if (!child.pid || child.exitCode !== null) return;
   if (process.platform === 'win32') {
+    // Mata el proceso y todo su árbol (Playwright lanza los navegadores como nietos).
     spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
-  } else {
-    try {
-      process.kill(-child.pid, 'SIGKILL');
-    } catch {
-      // El grupo ya murió.
-    }
+    return;
   }
+  // POSIX: el hijo es líder de su grupo (spawn detached), así que se señala al grupo
+  // entero. Intento ordenado (SIGTERM, deja que Playwright cierre los navegadores) y,
+  // de respaldo, forzado (SIGKILL) por si algo quedó vivo.
+  const signal = (sig) => {
+    try { process.kill(-child.pid, sig); } catch { /* el grupo ya murió */ }
+    try { child.kill(sig); } catch { /* el hijo ya murió */ }
+  };
+  signal('SIGTERM');
+  const timer = setTimeout(() => { if (child.exitCode === null) signal('SIGKILL'); }, 2000);
+  if (timer.unref) timer.unref();
 }
 
 /**
@@ -36,7 +42,7 @@ function runTests(options, onEvent) {
     testIds = [], runAll = false, visualMode = false, stopOnFail = false,
   } = options;
 
-  const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1' };
+  const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1', PLAYWRIGHT_HTML_OPEN: 'never' };
   if (profile) env.QA_PROFILE = profile;
 
   const child = spawn(nodePath, buildArgs({ cliPath, testIds, runAll, reporters, visualMode, stopOnFail }), {
@@ -48,11 +54,18 @@ function runTests(options, onEvent) {
   });
 
   const statuses = new Map();
+  const details = new Map();
   let durationMs = 0;
   let stopped = false;
 
   const feed = createStreamParser((record) => {
-    if (record.type === 'testEnd' && !record.willRetry) statuses.set(record.id, record.status);
+    if (record.type === 'testEnd' && !record.willRetry) {
+      statuses.set(record.id, record.status);
+      details.set(record.id, {
+        id: record.id, name: record.name, status: record.status,
+        durationMs: record.durationMs, error: record.error, retry: record.retry,
+      });
+    }
     if (record.type === 'end') durationMs = record.durationMs;
     for (const event of translate(record)) onEvent(event);
   });
@@ -78,9 +91,10 @@ function runTests(options, onEvent) {
           skipped: values.filter((s) => s === 'skipped').length,
           durationMs,
         },
+        tests: [...details.values()],
       });
     });
-    child.on('error', () => resolve({ ok: false, stopped, summary: { passed: 0, failed: 0, skipped: 0, durationMs: 0 } }));
+    child.on('error', () => resolve({ ok: false, stopped, summary: { passed: 0, failed: 0, skipped: 0, durationMs: 0 }, tests: [] }));
   });
 
   return {

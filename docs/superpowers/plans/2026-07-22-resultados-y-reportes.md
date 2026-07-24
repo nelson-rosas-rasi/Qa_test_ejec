@@ -673,14 +673,18 @@ Reemplazar los dos stubs finales (líneas ~279-281: `report:generate` e `history
         record.report = { kind: 'playwright-html', path: `${record.id}/report` };
       }
     } catch { record.report = null; }
+    let n8nSkipped = false;
     if (toN8n) {
       const url = resolveN8nUrl(record.projectId);
-      if (!url) return { ok: false, code: 'N8N_NOT_CONFIGURED', error: 'Configura la dirección para generar la documentación.' };
-      const res = await notifyN8n(record, { url });
-      record.n8n = { sent: true, at: res.at, ok: res.ok, error: res.error };
+      if (url) {
+        const res = await notifyN8n(record, { url });
+        record.n8n = { sent: true, at: res.at, ok: res.ok, error: res.error };
+      } else {
+        n8nSkipped = true;   // pidió documentación pero no hay URL: se guarda local igual
+      }
     }
     resultsStore.save(record);
-    return { ok: true, record };
+    return { ok: true, record, n8nSkipped };
   });
 
   ipcMain.handle('results:list', (_event, projectId) => resultsStore.list(projectId));
@@ -708,17 +712,18 @@ Reemplazar los dos stubs finales (líneas ~279-281: `report:generate` e `history
     return { ok: res.ok, n8n: record.n8n };
   });
 
-  ipcMain.handle('results:openReport', (_event, projectId, runId) => {
+  ipcMain.handle('results:openReport', async (_event, projectId, runId) => {
     const index = resultsStore.reportIndex(projectId, runId);
     if (!fs.existsSync(index)) return { ok: false, error: 'El reporte no está disponible.' };
-    shell.openPath(index);
-    return { ok: true };
+    const err = await shell.openPath(index);   // '' si abrió; mensaje del SO si falló
+    return err ? { ok: false, error: err } : { ok: true };
   });
 
-  ipcMain.handle('results:openFolder', (_event, projectId, runId) => {
+  ipcMain.handle('results:openFolder', async (_event, projectId, runId) => {
     const runDir = resultsStore.runDir(projectId, runId);
-    shell.openPath(fs.existsSync(runDir) ? runDir : path.join(userData, 'results', projectId));
-    return { ok: true };
+    const target = fs.existsSync(runDir) ? runDir : path.join(userData, 'results', projectId);
+    const err = await shell.openPath(target);
+    return err ? { ok: false, error: err } : { ok: true };
   });
 ```
 
@@ -786,6 +791,7 @@ Añadir al `state` (junto a `expandedFail: null,`):
   currentRunId: null,
   results: [],             // corridas guardadas del proyecto abierto
   trackedTests: new Set(), // ids de tests seguidos en la pestaña de métricas
+  flash: null,             // aviso breve a mostrar en el detalle (p. ej. n8n no configurado)
 ```
 
 - [ ] **Step 2: Recoger el `runId` al terminar la corrida**
@@ -847,12 +853,11 @@ function renderSaveDecision() {
   };
   document.getElementById('dec-n8n').onclick = async () => {
     const r = await api.saveResults(runId, { toN8n: true });
-    if (!r.ok && r.code === 'N8N_NOT_CONFIGURED') {
-      msg().textContent = r.error + ' Puedes Guardar solo local por ahora.';
-      return;
-    }
     if (!r.ok) { msg().textContent = r.error || 'No se pudo guardar.'; return; }
+    // La corrida SIEMPRE se guarda local. Si pediste documentación pero no hay
+    // URL de n8n configurada, r.n8nSkipped es true: se avisa en el detalle.
     state.pendingSave = null;
+    if (r.n8nSkipped) state.flash = 'Guardado local. Configura la dirección para generar la documentación.';
     openResultDetail(r.record.id);
   };
 }
@@ -1043,6 +1048,15 @@ async function renderResultDetail() {
         <div class="fail-list" id="fail-list"></div>
       </div>
     </div>`;
+
+  if (state.flash) {
+    const banner = document.createElement('div');
+    banner.className = 'report-banner';
+    banner.style.cssText = 'margin-bottom:12px;background:var(--accent-light);';
+    banner.innerHTML = `<div style="flex:1;color:var(--accent);font-size:13px;">${escapeHtml(state.flash)}</div>`;
+    document.querySelector('.results-body').prepend(banner);
+    state.flash = null;
+  }
 
   const $failList = document.getElementById('fail-list');
   if (failed.length === 0) {

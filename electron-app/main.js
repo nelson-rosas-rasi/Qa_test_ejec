@@ -1,6 +1,7 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('node:path');
 const { registerIpc } = require('./main/ipc');
+const { setupAutoUpdate } = require('./main/updater');
 
 let mainWindow;
 
@@ -28,6 +29,7 @@ app.setAppUserModelId('com.tuempresa.qatestrunner');
 app.whenReady().then(() => {
   registerIpc(() => mainWindow);
   createWindow();
+  setupAutoUpdate(() => mainWindow); // busca actualizaciones de la app (solo empaquetada)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

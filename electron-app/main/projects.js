@@ -171,7 +171,30 @@ function createProjectManager({ projectsDir, gitPath = 'git', npmPath = process.
       throw friendlyCommandError('PROJECT_SYNC_FAILED', 'No fue posible actualizar la rama principal del proyecto.', err);
     }
   }
-  return { initialize, importExisting, prepare };
+  /**
+   * Verificación ligera (sin tocar el working tree ni reinstalar dependencias):
+   * hace `fetch` de la rama principal y compara el commit local con el remoto.
+   * Sirve para saber, por repositorio, si hay pruebas nuevas/refinadas por traer
+   * antes de decidir hacer el pull real (`prepare`).
+   */
+  async function checkStatus(project) {
+    if (!project?.repoPath || !project?.repoUrl || !project?.defaultBranch) throw appError('PROJECT_NOT_INITIALIZED', 'El proyecto no está inicializado correctamente.');
+    validateManagedPath(project.repoPath, projectsDir);
+    if (!fs.existsSync(path.join(project.repoPath, '.git'))) throw appError('REPOSITORY_NOT_FOUND', 'No se encontró el repositorio local. Inicializa nuevamente el proyecto.');
+    const branch = project.defaultBranch;
+    try {
+      await git(['fetch', '--prune', 'origin', `+refs/heads/${branch}:refs/remotes/origin/${branch}`], project.repoPath);
+      const localCommit = (await git(['rev-parse', 'HEAD'], project.repoPath)).stdout.trim();
+      const remoteCommit = (await git(['rev-parse', `refs/remotes/origin/${branch}`], project.repoPath)).stdout.trim();
+      const behind = Number((await git(['rev-list', '--count', `HEAD..refs/remotes/origin/${branch}`], project.repoPath)).stdout.trim()) || 0;
+      return { updateAvailable: localCommit !== remoteCommit, behind, localCommit, remoteCommit, checkedAt: new Date().toISOString() };
+    } catch (err) {
+      if (err.isAppError) throw err;
+      throw friendlyCommandError('PROJECT_STATUS_FAILED', 'No fue posible verificar si hay cambios nuevos en el repositorio.', err);
+    }
+  }
+
+  return { initialize, importExisting, prepare, checkStatus };
 }
 
 module.exports = { createProjectManager, parseDefaultBranch, uniqueProjectId, validateManagedPath };
