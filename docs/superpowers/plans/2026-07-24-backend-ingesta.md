@@ -11,6 +11,14 @@
 ## Global Constraints
 
 - Repositorio: `/home/nrosas@corp.rasi.com.co/Escritorio/Proyectos /SpringComuTestQa/ReportRas_Backe`. Todos los comandos se ejecutan desde ahí.
+- **`JAVA_HOME` es obligatorio en cada invocación de Maven.** Esta máquina tiene Java 21 solo como **JRE** y el único `javac` del sistema es el de **Java 8**, que no soporta `--release 17`. Hay un JDK 21 instalado en el home (sin root). Todos los comandos `mvn` de este plan deben ejecutarse así:
+
+  ```bash
+  export JAVA_HOME="$HOME/.jdks/jdk-21.0.12+8"
+  mvn -B test
+  ```
+
+  Sin ese `export`, el build falla con `release version 17 not supported`. Verificado: con él, `mvn -B test` da `BUILD SUCCESS` / `No tests to run`.
 - Suite: `mvn test`. **Estado base: 0 tests — `src/test` no existe.** La Task 1 crea la infraestructura; a partir de ahí ninguna tarea puede dejar la suite en rojo.
 - **Este repositorio está limpio** (4 commits, sin WIP), así que **sí se commitea por tarea**, a diferencia del repo de RunQA.
 - **`GoogleDriveConfig` crea el bean `Drive` leyendo `classpath:google-credentials.json` al arrancar, y ese archivo no existe en el repo.** Cualquier `@SpringBootTest` debe reemplazar ese bean con `@MockBean` o el contexto no levanta. La Task 1 deja esto resuelto para las demás.
