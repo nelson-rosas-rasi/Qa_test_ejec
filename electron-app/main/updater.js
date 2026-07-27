@@ -69,8 +69,13 @@ function setupAutoUpdate(getWindow) {
     console.error('[updater] error al actualizar:', err?.message || err);
   });
 
-  autoUpdater.checkForUpdates();
-  setInterval(() => autoUpdater.checkForUpdates(), CHECK_INTERVAL_MS);
+  const checkForUpdates = () =>
+    autoUpdater.checkForUpdates().catch((err) => {
+      console.error('[updater] no se pudo revisar actualizaciones:', err?.message || err);
+    });
+
+  checkForUpdates();
+  setInterval(checkForUpdates, CHECK_INTERVAL_MS);
 }
 
 module.exports = { setupAutoUpdate };
