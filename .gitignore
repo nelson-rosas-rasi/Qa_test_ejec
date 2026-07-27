@@ -11,3 +11,6 @@ playwright-report/
 !electron-app/test-fixtures/sample-repo/.env.*
 
 app-run.log
+
+# Datos de una base Postgres local (no versionar)
+.postgres-data/
