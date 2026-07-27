@@ -24,7 +24,7 @@
     "publish": {
       "provider": "github",
       "owner": "CAMBIAME-usuario-u-org",
-      "repo": "runqa-releases"
+      "repo": "CAMBIAME-runqa-releases"
     },
     "win": {
       "target": "nsis",

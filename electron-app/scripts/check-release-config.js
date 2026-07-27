@@ -4,12 +4,12 @@
 const path = require('path');
 
 const PLACEHOLDER_OWNER = 'CAMBIAME-usuario-u-org';
-const PLACEHOLDER_REPO = 'runqa-releases';
+const PLACEHOLDER_REPO = 'CAMBIAME-runqa-releases';
 
 function findPlaceholderFields(publish) {
   const problems = [];
-  if (!publish || publish.owner === PLACEHOLDER_OWNER) problems.push('owner');
-  if (!publish || publish.repo === PLACEHOLDER_REPO) problems.push('repo');
+  if (!publish || !publish.owner || publish.owner === PLACEHOLDER_OWNER) problems.push('owner');
+  if (!publish || !publish.repo || publish.repo === PLACEHOLDER_REPO) problems.push('repo');
   return problems;
 }
 
@@ -21,7 +21,7 @@ function main() {
   if (problems.length > 0) {
     console.error(
       `[release] falta configurar ${problems.join(' y ')} en package.json -> build.publish ` +
-      'antes de publicar (hoy tiene el valor de ejemplo, no un repo real de GitHub).'
+      'antes de publicar (tiene el valor de ejemplo o está ausente; debe apuntar a un repo real de GitHub).'
     );
     process.exit(1);
   }

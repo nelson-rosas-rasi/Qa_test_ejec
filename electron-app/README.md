@@ -99,7 +99,7 @@ generado con `electron-builder` y actualizado en caliente con
 
 ### Descargar la versión inicial
 
-El instalador siempre está en:
+La última versión siempre está en:
 
 ```
 https://github.com/{owner}/{repo}/releases/latest
@@ -113,10 +113,10 @@ otro lado, incluida esta sección.
 
 ### Cortar una release nueva
 
-1. Subí la versión en `package.json` (campo `"version"`).
-2. Probá el build localmente: `npm run dist`. Revisá `dist/` — debe generar
+1. Sube la versión en `package.json` (campo `"version"`).
+2. Prueba el build localmente: `npm run dist`. Revisa `dist/` — debe generar
    `RunQA Setup <version>.exe`, `.exe.blockmap` y `latest.yml`.
-3. Publicá: `GH_TOKEN=<token> npm run release`. El token necesita permiso
+3. Publica: `GH_TOKEN=<token> npm run release`. El token necesita permiso
    `repo` sobre el repo configurado en `build.publish` (para crear el
    release y subirle assets). Si `owner`/`repo` siguen con el valor de
    ejemplo, el comando falla antes de tocar `electron-builder` y te dice qué
