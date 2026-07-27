@@ -90,3 +90,41 @@ la llamada real. No requiere tocar el renderer.
   `projectId`.
 - Todo el copy está en español neutro y evita jerga técnica (nunca dice
   "git pull", "commit", "build", etc.), como pide el equipo de QA.
+
+## Distribución y actualizaciones
+
+RunQA se distribuye como instalador de Windows (NSIS) vía GitHub Releases,
+generado con `electron-builder` y actualizado en caliente con
+`electron-updater`.
+
+### Descargar la versión inicial
+
+El instalador siempre está en:
+
+```
+https://github.com/{owner}/{repo}/releases/latest
+```
+
+donde `{owner}/{repo}` son los valores configurados en `package.json` →
+`build.publish` (hoy todavía con un valor de ejemplo — ver
+`scripts/check-release-config.js`, que bloquea publicar mientras siga así).
+Ese archivo es la única fuente de verdad: no copies el owner/repo en ningún
+otro lado, incluida esta sección.
+
+### Cortar una release nueva
+
+1. Subí la versión en `package.json` (campo `"version"`).
+2. Probá el build localmente: `npm run dist`. Revisá `dist/` — debe generar
+   `RunQA Setup <version>.exe`, `.exe.blockmap` y `latest.yml`.
+3. Publicá: `GH_TOKEN=<token> npm run release`. El token necesita permiso
+   `repo` sobre el repo configurado en `build.publish` (para crear el
+   release y subirle assets). Si `owner`/`repo` siguen con el valor de
+   ejemplo, el comando falla antes de tocar `electron-builder` y te dice qué
+   campo falta.
+4. `electron-builder` sube tres archivos al release de GitHub:
+   - `RunQA Setup <version>.exe` — el instalador.
+   - `RunQA Setup <version>.exe.blockmap` — permite que las instalaciones
+     existentes bajen solo los bloques que cambiaron en vez del instalador
+     entero.
+   - `latest.yml` — lo que consulta `electron-updater` en cada máquina para
+     saber si hay una versión más nueva.
