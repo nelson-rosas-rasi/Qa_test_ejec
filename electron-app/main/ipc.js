@@ -23,6 +23,10 @@ const { createRecordingsStore } = require('./recordings/store');
 const { detectBaseUrl, recordingRepoPath, sanitizeBranch } = require('./recordings/detect');
 const { record } = require('./recordings/codegen');
 const { createRecordingsUploader } = require('./recordings/upload');
+const { createServerSession } = require('./server/session');
+const { createServerClient } = require('./server/client');
+const { createOutbox } = require('./server/queue');
+const { createSender } = require('./server/sender');
 const { createAccountStore } = require('./github/account');
 const { createGitAuth } = require('./github/git-auth');
 const { requestDeviceCode, pollForToken } = require('./github/device-flow');
@@ -55,6 +59,24 @@ function registerIpc(getWindow) {
   const resultsStore = createResultsStore({ dir: path.join(userData, 'results') });
   const recordingsStore = createRecordingsStore({ dir: path.join(userData, 'grabaciones') });
   const uploader = createRecordingsUploader({ baseDir: path.join(userData, 'grabaciones-git'), auth });
+
+  const DEFAULT_SERVER_URL = 'http://localhost:8080';
+  const serverSession = createServerSession({ store, safeStorage });
+  const serverUrl = () => store.getSetting('serverUrl') || DEFAULT_SERVER_URL;
+  // Cliente fresco por uso: así un cambio de URL en Configuración se toma sin reiniciar.
+  const newServerClient = () => createServerClient({ baseUrl: serverUrl() });
+  const outbox = createOutbox({ dir: path.join(userData, 'outbox') });
+  const serverSender = createSender({
+    outbox,
+    client: { postRun: (token, record) => newServerClient().postRun(token, record) },
+    getToken: () => {
+      const s = serverSession.load();
+      return s && !serverSession.isExpired(s.token) ? s.token : null;
+    },
+    onChange: () => getWindow()?.webContents.send('server:pending', outbox.list().length),
+  });
+  // Intento inicial de drenado al arrancar (por si quedaron corridas de una sesión previa).
+  serverSender.drain();
 
   /** Escribe en el clon el .env del perfil activo del proyecto (o solo barre si no hay). */
   function materializeActive(projectId) {
@@ -142,6 +164,24 @@ function registerIpc(getWindow) {
       return { ok: true, project: publicProject({ ...project, ...update }) };
     } catch (err) { return { ok: false, error: err.message || String(err), code: err.code }; }
   });
+  ipcMain.handle('projects:removalSummary', (_event, projectId) => ({
+    profiles: profileStore.list(projectId).length,
+    recordings: recordingsStore.list(projectId).length,
+    results: resultsStore.list(projectId).length,
+  }));
+  ipcMain.handle('projects:remove', (_event, projectId, opts) => {
+    try {
+      const project = ensureProject(projectId);
+      projects.remove(project);
+      store.removeProject(projectId);
+      if (opts?.deleteData) {
+        profileStore.removeProject(projectId);
+        resultsStore.removeProject(projectId);
+        recordingsStore.removeProject(projectId);
+      }
+      return { ok: true };
+    } catch (err) { return { ok: false, error: err.message || String(err), code: err.code }; }
+  });
 
   /* ---------- cuenta de GitHub ---------- */
   ipcMain.handle('github:status', async () => {
@@ -203,6 +243,29 @@ function registerIpc(getWindow) {
     return { ok: true };
   });
 
+  /* ---------- sesión del backend ---------- */
+  ipcMain.handle('auth:login', async (_event, username, password) => {
+    const res = await newServerClient().login(username, password);
+    if (!res.ok) return { ok: false, error: res.error, code: res.code };
+    serverSession.save(res.token, res.user);
+    serverSender.drain();   // por si había corridas encoladas esperando sesión
+    return { ok: true, user: res.user };
+  });
+
+  ipcMain.handle('auth:logout', () => { serverSession.clear(); return { ok: true }; });
+
+  ipcMain.handle('auth:status', () => {
+    const s = serverSession.load();
+    if (!s) return { authenticated: false };
+    return { authenticated: !serverSession.isExpired(s.token), user: s.user, pending: outbox.list().length };
+  });
+
+  ipcMain.handle('config:getServerUrl', () => serverUrl());
+  ipcMain.handle('config:setServerUrl', (_event, url) => {
+    store.setSetting('serverUrl', String(url || '').trim() || null);
+    return { ok: true, serverUrl: serverUrl() };
+  });
+
   /* ---------- ventana ---------- */
   ipcMain.on('window:minimize', () => getWindow()?.minimize());
   ipcMain.on('window:maximize', () => {
@@ -217,7 +280,17 @@ function registerIpc(getWindow) {
   ipcMain.handle('tests:getTree', async (_event, projectId) => {
     try {
       const repoPath = await ensureRepoPath(projectId);
-      return await listTests({ repoPath, cliPath: locatePlaywrightCli(repoPath) });
+      const tree = await listTests({ repoPath, cliPath: locatePlaywrightCli(repoPath) });
+      // Sincroniza los módulos (carpetas) con el backend, sin bloquear ni fallar la UI.
+      const project = store.getProject(projectId);
+      const s = serverSession.load();
+      if (project.repoUrl && s && !serverSession.isExpired(s.token)) {
+        const modules = tree.map((suite) => suite.name).filter((n) => n && n !== 'General');
+        newServerClient()
+          .syncModules(s.token, { repoUrl: project.repoUrl, projectName: project.name || projectId, modules })
+          .catch(() => {});
+      }
+      return tree;
     } catch (err) {
       showError(err);
       return [];
@@ -339,6 +412,27 @@ function registerIpc(getWindow) {
         report: null,
         n8n: { sent: false, at: null, ok: null, error: null },
       };
+      // Telemetría: TODA corrida se encola para el backend (el panel local solo
+      // decide lo local). repoUrl es la clave de correlación; discardedByQa se
+      // ajusta luego si el QA descarta (ver results:save / results:discard).
+      outbox.enqueue({
+        runId: lastRun.id,
+        repoUrl: project.repoUrl || null,
+        projectName: lastRun.projectName,
+        profileId: lastRun.profileId,
+        profileName: lastRun.profileName,
+        startedAt: lastRun.startedAt,
+        finishedAt: lastRun.finishedAt,
+        mode: lastRun.mode,
+        total: lastRun.summary.total,
+        passed: lastRun.summary.passed,
+        failed: lastRun.summary.failed,
+        skipped: lastRun.summary.skipped,
+        durationMs: lastRun.durationMs,
+        discardedByQa: false,
+        tests: lastRun.tests,
+      });
+      serverSender.drain();
       return { ...outcome, summary: lastRun.summary, runId };
     } catch (err) {
       showError(err);
@@ -417,6 +511,12 @@ function registerIpc(getWindow) {
   ipcMain.handle('results:get', (_event, projectId, runId) => resultsStore.get(projectId, runId));
   ipcMain.handle('results:remove', (_event, projectId, runId) => {
     resultsStore.remove(projectId, runId);
+    return { ok: true };
+  });
+
+  ipcMain.handle('results:discard', (_event, runId) => {
+    outbox.setDiscarded(runId, true);
+    serverSender.drain();
     return { ok: true };
   });
 

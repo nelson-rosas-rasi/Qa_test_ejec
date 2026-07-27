@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('qa', {
   initializeProject: (input) => ipcRenderer.invoke('projects:initialize', input),
   importProjectFolder: () => ipcRenderer.invoke('projects:importFolder'),
   prepareProject: (projectId) => ipcRenderer.invoke('projects:prepare', projectId),
+  projectRemovalSummary: (projectId) => ipcRenderer.invoke('projects:removalSummary', projectId),
+  removeProject: (projectId, opts) => ipcRenderer.invoke('projects:remove', projectId, opts),
 
   // datos
   getTestTree: (projectId) => ipcRenderer.invoke('tests:getTree', projectId),
@@ -63,4 +65,13 @@ contextBridge.exposeInMainWorld('qa', {
   openResultReport: (projectId, runId) => ipcRenderer.invoke('results:openReport', projectId, runId),
   openResultPlaywright: (projectId, runId) => ipcRenderer.invoke('results:openPlaywright', projectId, runId),
   openResultFolder: (projectId, runId) => ipcRenderer.invoke('results:openFolder', projectId, runId),
+
+  // sesión del backend
+  login: (username, password) => ipcRenderer.invoke('auth:login', username, password),
+  logout: () => ipcRenderer.invoke('auth:logout'),
+  authStatus: () => ipcRenderer.invoke('auth:status'),
+  getServerUrl: () => ipcRenderer.invoke('config:getServerUrl'),
+  setServerUrl: (url) => ipcRenderer.invoke('config:setServerUrl', url),
+  discardResult: (runId) => ipcRenderer.invoke('results:discard', runId),
+  onServerPending: (cb) => ipcRenderer.on('server:pending', (_e, n) => cb(n)),
 });

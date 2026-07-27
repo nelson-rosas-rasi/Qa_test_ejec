@@ -58,6 +58,10 @@ function createRecordingsStore({ dir }) {
       fs.rmSync(specFile(projectId, id), { force: true });
       fs.rmSync(metaFile(projectId, id), { force: true });
     },
+
+    removeProject(projectId) {
+      fs.rmSync(projectDir(projectId), { recursive: true, force: true });
+    },
   };
 }
 

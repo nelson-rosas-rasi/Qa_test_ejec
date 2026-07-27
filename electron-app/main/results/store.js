@@ -47,6 +47,10 @@ function createResultsStore({ dir }) {
       fs.rmSync(recordFile(projectId, runId), { force: true });
       fs.rmSync(runDir(projectId, runId), { recursive: true, force: true });
     },
+
+    removeProject(projectId) {
+      fs.rmSync(projectDir(projectId), { recursive: true, force: true });
+    },
     runDir, reportDir, reportIndex, reportHtml, reportPdf,
   };
 }

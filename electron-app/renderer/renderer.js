@@ -46,6 +46,8 @@ const state = {
   trackedTests: new Set(), // ids de tests seguidos en la pestaña de métricas
   metricsPickerOpen: false, // "Elige los tests a seguir" desplegado o no
   flash: null,             // aviso breve a mostrar en el detalle (p. ej. n8n no configurado)
+  auth: null,            // { username, fullName, role } o null
+  serverPending: 0,      // corridas en cola de envío al backend
 };
 
 const $main = document.getElementById('main');
@@ -58,6 +60,11 @@ async function init() {
   wireTitlebar();
   wireSidebar();
   wireApiEvents();
+  const status = await api.authStatus();
+  state.auth = status.authenticated ? status.user : null;
+  state.serverPending = status.pending || 0;
+  api.onServerPending((n) => { state.serverPending = n; renderSidebarStatus(); });
+  if (!state.auth) { renderLogin(); return; }
   await loadGithubStatus();
   projects = await api.listProjects();
   state.project = projects[0]?.id || null;
@@ -310,6 +317,25 @@ function renderProfileSwitcher() {
 
 function renderSidebarStatus() {
   const el = document.getElementById('sync-pill');
+
+  // Corridas esperando envío al backend (cola offline). No existe un contenedor
+  // dedicado en el markup del sidebar; se crea una vez, anclado justo tras el
+  // sync-pill, y se reutiliza en cada render (independiente del estado del pill).
+  let pend = document.getElementById('sidebar-pending');
+  if (!pend) {
+    pend = document.createElement('div');
+    pend.id = 'sidebar-pending';
+    pend.className = 'sidebar-hint';
+    pend.style.cssText = 'font-size:11px;color:#94a3b8;text-align:center;margin-top:6px;';
+    el.insertAdjacentElement('afterend', pend);
+  }
+  if (state.serverPending > 0) {
+    pend.style.display = '';
+    pend.textContent = `${state.serverPending} corrida(s) por enviar`;
+  } else {
+    pend.style.display = 'none';
+  }
+
   if (needsGithub()) {
     el.className = 'sync-pill';
     el.innerHTML = '<span class="txt">Conecta tu cuenta para actualizar</span>';
@@ -625,6 +651,48 @@ function eyeIcon(open) {
 }
 function stopIcon() {
   return `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>`;
+}
+
+function renderLogin() {
+  $main.innerHTML = `
+    <div class="screen" style="display:grid;place-items:center;padding:40px">
+      <div style="width:360px;max-width:100%">
+        <div class="screen-title" style="text-align:center">Inicia sesión</div>
+        <div class="screen-subtitle" style="text-align:center;margin:8px 0 22px">
+          Identifícate con tu cuenta de QA para reportar tus corridas.
+        </div>
+        <input id="login-user" type="text" placeholder="Usuario" autofocus
+          style="width:100%;padding:11px;border:1px solid #dbe3ef;border-radius:8px;box-sizing:border-box;margin-bottom:10px">
+        <input id="login-pass" type="password" placeholder="Contraseña"
+          style="width:100%;padding:11px;border:1px solid #dbe3ef;border-radius:8px;box-sizing:border-box">
+        <div id="login-error" style="display:none;color:#b91c1c;font-size:12px;margin-top:10px"></div>
+        <button class="btn btn-primary" id="login-go" style="width:100%;margin-top:16px">Entrar</button>
+      </div>
+    </div>`;
+
+  const submit = async () => {
+    const btn = document.getElementById('login-go');
+    const err = document.getElementById('login-error');
+    err.style.display = 'none';
+    btn.disabled = true; btn.textContent = 'Entrando…';
+    const res = await api.login(
+      document.getElementById('login-user').value.trim(),
+      document.getElementById('login-pass').value,
+    );
+    if (!res.ok) {
+      err.textContent = res.error || 'No se pudo iniciar sesión.';
+      err.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Entrar';
+      return;
+    }
+    state.auth = res.user;
+    // Re-arranca limpio: evita doble registro de listeners IPC (init/wireApiEvents
+    // se ejecutan una sola vez por carga). Al recargar, authStatus ya da autenticado.
+    window.location.reload();
+  };
+
+  document.getElementById('login-go').onclick = submit;
+  document.getElementById('login-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
 }
 
 function renderEmptyProject() {
@@ -1058,6 +1126,7 @@ function renderSaveDecision() {
   const runId = state.pendingSave.runId;
   const msg = () => document.getElementById('save-decision-msg');
   document.getElementById('dec-discard').onclick = () => {
+    if (runId) api.discardResult(runId);
     state.pendingSave = null;
     goToResults('registro');
   };
@@ -1423,6 +1492,7 @@ async function renderConfig() {
           <div class="config-label">Repositorio</div>
           <button class="btn btn-secondary btn-sm" id="config-open-folder" style="margin-top:10px" ${cfg.hasRepo ? '' : 'disabled'}>Abrir carpeta del repo</button>
           <div id="config-repo-status" class="config-hint" style="color:var(--red-dark)">${cfg.hasRepo ? '' : 'La carpeta del repositorio no está disponible.'}</div>
+          <button class="btn btn-danger btn-sm" id="config-remove-repo" style="margin-top:14px">Eliminar repositorio</button>
         </div>
       </div>
     </div>`;
@@ -1464,6 +1534,86 @@ async function renderConfig() {
       const res = await api.openProjectFolder(state.project);
       if (!res.ok) document.getElementById('config-repo-status').textContent = res.error || 'No se pudo abrir la carpeta.';
     };
+  }
+  document.getElementById('config-remove-repo').onclick = () => openDeleteProjectModal(state.project);
+}
+
+async function openDeleteProjectModal(projectId) {
+  const name = currentProject()?.name || '';
+  let s;
+  try {
+    s = await api.projectRemovalSummary(projectId);
+  } catch {
+    openAlert({ title: 'Eliminar repositorio', message: 'No se pudo leer los datos del repositorio. Inténtalo de nuevo.' });
+    return;
+  }
+  const total = s.profiles + s.recordings + s.results;
+  const parts = [];
+  if (s.profiles) parts.push(`${s.profiles} ${s.profiles === 1 ? 'perfil' : 'perfiles'}`);
+  if (s.recordings) parts.push(`${s.recordings} ${s.recordings === 1 ? 'grabación' : 'grabaciones'}`);
+  if (s.results) parts.push(`${s.results} ${s.results === 1 ? 'resultado guardado' : 'resultados guardados'}`);
+
+  $overlay.hidden = false;
+  $overlay.innerHTML = `<div class="modal" style="width:480px"><div class="modal-pad">
+    <div style="display:flex;gap:12px;align-items:flex-start;">${warnIcon()}
+      <div style="flex:1;min-width:0;">
+        <div class="modal-title">Eliminar repositorio</div>
+        <div class="modal-sub" style="margin-top:6px;">Vas a eliminar el repositorio ${name ? `«${escapeHtml(name)}»` : ''}. Esta acción no se puede deshacer.</div>
+        ${total > 0 ? `
+          <div class="modal-sub" style="margin-top:12px;">Este repositorio tiene ${escapeHtml(parts.join(', '))}.</div>
+          <label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:13px;cursor:pointer;">
+            <input type="checkbox" id="del-repo-data" style="margin-top:2px;flex:none;">
+            <span>Eliminar también estos datos. Si lo dejas sin marcar, se conservan.</span>
+          </label>
+        ` : ''}
+        <div id="del-repo-error" style="display:none;margin-top:12px;color:#b91c1c;font-size:12px"></div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="del-repo-cancel">Cancelar</button>
+      <button class="btn btn-danger" id="del-repo-confirm">Eliminar repositorio</button>
+    </div>
+  </div></div>`;
+
+  document.getElementById('del-repo-cancel').onclick = () => closeModal();
+  document.getElementById('del-repo-confirm').onclick = async () => {
+    const deleteData = total > 0 && document.getElementById('del-repo-data').checked;
+    const res = await api.removeProject(projectId, { deleteData });
+    if (!res.ok) {
+      const err = document.getElementById('del-repo-error');
+      err.textContent = res.error || 'No se pudo eliminar el repositorio.';
+      err.style.display = 'block';
+      return;
+    }
+    closeModal();
+    await afterRemoval();
+  };
+}
+
+async function afterRemoval() {
+  projects = await api.listProjects();
+  state.project = projects[0]?.id || null;
+  state.screen = 'dashboard';
+  document.querySelectorAll('.nav-item').forEach((n) => n.classList.toggle('active', n.dataset.screen === 'dashboard'));
+  renderProjectSwitcher();
+  if (!state.project) {
+    state.profiles = [];
+    state.profile = null;
+    renderProfileSwitcher();
+    renderSidebarStatus();
+    renderEmptyProject();
+    return;
+  }
+  state.loadingProject = state.project;
+  renderProjectSwitcher();
+  try {
+    if (!await loadProject(state.project)) return;
+    await loadProfiles();
+    renderSidebarStatus();
+    renderScreen();
+  } finally {
+    state.loadingProject = null;
+    renderProjectSwitcher();
   }
 }
 
@@ -1744,6 +1894,8 @@ function createBrowserStub() {
     async initializeProject({ name, repoUrl }) { return { ok:true, project:{ id:'nuevo', name, repoUrl, defaultBranch:'main' } }; },
     async importProjectFolder() { return { canceled:true, ok:false }; },
     async prepareProject(projectId) { await new Promise((r) => setTimeout(r, 600)); return { ok:true, project:{ id:projectId, name:'Proyecto demo', defaultBranch:'main' } }; },
+    async projectRemovalSummary() { return { profiles: 2, recordings: 1, results: 3 }; },
+    async removeProject() { return { ok: true }; },
     windowMinimize() {}, windowMaximize() {}, windowClose() {},
     async getTestTree() {
       return fetch('../mock/tests-tree.json').then((r) => r.json()).catch(() => []);
@@ -1811,5 +1963,12 @@ function createBrowserStub() {
     async recordFlow() { return { ok: false }; }, async renameRecording() {},
     async removeRecording() {}, async recordingBranches() { return { ok: true, branches: [] }; },
     async uploadRecording() { return { ok: false }; },
+    async authStatus() { return { authenticated: true, user: { username: 'demo', fullName: 'QA Demo', role: 'QA_ANALYST' }, pending: 0 }; },
+    async login() { return { ok: true, user: { username: 'demo', fullName: 'QA Demo', role: 'QA_ANALYST' } }; },
+    async logout() { return { ok: true }; },
+    async getServerUrl() { return 'http://localhost:8080'; },
+    async setServerUrl() { return { ok: true, serverUrl: 'http://localhost:8080' }; },
+    async discardResult() { return { ok: true }; },
+    onServerPending() {},
   };
 }

@@ -278,3 +278,31 @@ test('un ejecutable de verdad no se invoca con shell', async () => {
   assert.notEqual(calls.find((call) => call.command === 'npm').options.shell, true);
   assert.notEqual(calls.find((call) => call.command === 'git').options.shell, true);
 });
+
+test('remove borra el clon dentro de la carpeta administrada', () => {
+  const projectsDir = temp();
+  const repoPath = path.join(projectsDir, 'erp');
+  fs.mkdirSync(path.join(repoPath, '.git'), { recursive: true });
+  fs.writeFileSync(path.join(repoPath, 'package.json'), '{}');
+  createProjectManager({ projectsDir, run: async () => ({ stdout: '', stderr: '' }) })
+    .remove({ repoPath, repoUrl: 'x', defaultBranch: 'main' });
+  assert.equal(fs.existsSync(repoPath), false);
+});
+
+test('remove rechaza una ruta fuera de la carpeta administrada', () => {
+  const projectsDir = temp();
+  const outside = path.join(projectsDir, '..', 'personal');
+  assert.throws(
+    () => createProjectManager({ projectsDir, run: async () => ({ stdout: '', stderr: '' }) })
+      .remove({ repoPath: outside, repoUrl: 'x', defaultBranch: 'main' }),
+    (err) => err.code === 'UNMANAGED_REPOSITORY',
+  );
+});
+
+test('remove sin repoPath lanza PROJECT_NOT_INITIALIZED', () => {
+  const projectsDir = temp();
+  assert.throws(
+    () => createProjectManager({ projectsDir, run: async () => ({ stdout: '', stderr: '' }) }).remove({}),
+    (err) => err.code === 'PROJECT_NOT_INITIALIZED',
+  );
+});

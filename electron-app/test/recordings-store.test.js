@@ -68,3 +68,16 @@ test('list vacío sin carpeta', () => {
   const store = createRecordingsStore({ dir: tempDir() });
   assert.deepEqual(store.list('nada'), []);
 });
+
+test('removeProject borra todas las grabaciones de ese proyecto y no toca las de otro', () => {
+  const store = createRecordingsStore({ dir: tempDir() });
+  withSpec(store, 'erp', 'grab-1', 'Uno');
+  withSpec(store, 'otro', 'grab-2', 'Dos');
+  store.removeProject('erp');
+  assert.deepEqual(store.list('erp'), []);
+  assert.equal(store.list('otro').length, 1);
+});
+
+test('removeProject es idempotente si el proyecto no tiene grabaciones', () => {
+  assert.doesNotThrow(() => createRecordingsStore({ dir: tempDir() }).removeProject('nada'));
+});

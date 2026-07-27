@@ -76,3 +76,19 @@ test('remove borra el perfil', () => {
   store.remove('erp', 'ana-ruiz');
   assert.equal(store.load('erp', 'ana-ruiz'), null);
 });
+
+test('removeProject borra todos los perfiles de ese proyecto y no toca los de otro', () => {
+  const dir = tempDir();
+  const store = createProfileStore({ dir, safeStorage: fakeSafeStorage() });
+  store.save('erp', 'ana-ruiz', values);
+  store.save('erp', 'beto-paz', { QA_NOMBRE: 'Beto Paz', QA_CARGO: 'QA' });
+  store.save('medical', 'carla', { QA_NOMBRE: 'Carla', QA_CARGO: 'QA' });
+  store.removeProject('erp');
+  assert.deepEqual(store.list('erp'), []);
+  assert.equal(store.list('medical').length, 1);
+});
+
+test('removeProject es idempotente si el proyecto no tiene perfiles', () => {
+  const store = createProfileStore({ dir: tempDir(), safeStorage: fakeSafeStorage() });
+  assert.doesNotThrow(() => store.removeProject('nada'));
+});

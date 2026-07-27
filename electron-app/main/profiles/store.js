@@ -54,6 +54,10 @@ function createProfileStore({ dir, safeStorage }) {
     remove(projectId, id) {
       fs.rmSync(file(projectId, id), { force: true });
     },
+
+    removeProject(projectId) {
+      fs.rmSync(projectDir(projectId), { recursive: true, force: true });
+    },
   };
 }
 

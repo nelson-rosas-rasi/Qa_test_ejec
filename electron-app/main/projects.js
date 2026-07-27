@@ -194,7 +194,13 @@ function createProjectManager({ projectsDir, gitPath = 'git', npmPath = process.
     }
   }
 
-  return { initialize, importExisting, prepare, checkStatus };
+  function remove(project) {
+    if (!project?.repoPath) throw appError('PROJECT_NOT_INITIALIZED', 'El proyecto no está inicializado correctamente.');
+    validateManagedPath(project.repoPath, projectsDir);
+    fs.rmSync(project.repoPath, { recursive: true, force: true });
+  }
+
+  return { initialize, importExisting, prepare, checkStatus, remove };
 }
 
 module.exports = { createProjectManager, parseDefaultBranch, uniqueProjectId, validateManagedPath };

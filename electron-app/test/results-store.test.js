@@ -64,3 +64,17 @@ test('remove borra el JSON y la carpeta del reporte', () => {
   assert.equal(store.get('erp', 'run-1000'), null);
   assert.equal(fs.existsSync(store.runDir('erp', 'run-1000')), false);
 });
+
+test('removeProject borra todas las corridas de ese proyecto y no toca las de otro', () => {
+  const dir = tempDir();
+  const store = createResultsStore({ dir });
+  store.save(sampleRecord({ id: 'run-1' }));
+  store.save(sampleRecord({ id: 'run-2', projectId: 'otro', projectName: 'Otro' }));
+  store.removeProject('erp');
+  assert.deepEqual(store.list('erp'), []);
+  assert.equal(store.list('otro').length, 1);
+});
+
+test('removeProject es idempotente si el proyecto no tiene corridas', () => {
+  assert.doesNotThrow(() => createResultsStore({ dir: tempDir() }).removeProject('nada'));
+});

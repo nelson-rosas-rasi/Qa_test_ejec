@@ -96,3 +96,26 @@ test('setSetting rechaza la clave reservada "projects" y el catálogo sobrevive'
   assert.throws(() => store.setSetting('projects', null), /clave "projects" está reservada/);
   assert.deepEqual(createConfigStore(dir).getProject('erp'), { profile: 'demo' });
 });
+
+test('removeProject quita solo esa entrada y conserva las demás', () => {
+  const dir = tempDir();
+  const store = createConfigStore(dir);
+  store.setProject('erp', { profile: 'a' });
+  store.setProject('medical', { profile: 'b' });
+  store.removeProject('erp');
+  assert.deepEqual(store.getProject('erp'), {});
+  assert.equal(store.getProject('medical').profile, 'b');
+});
+
+test('removeProject no borra las claves globales', () => {
+  const dir = tempDir();
+  const store = createConfigStore(dir);
+  store.setSetting('github', { token: 'xyz' });
+  store.setProject('erp', { profile: 'a' });
+  store.removeProject('erp');
+  assert.deepEqual(store.getSetting('github'), { token: 'xyz' });
+});
+
+test('removeProject es idempotente si el proyecto no existe', () => {
+  assert.doesNotThrow(() => createConfigStore(tempDir()).removeProject('nada'));
+});

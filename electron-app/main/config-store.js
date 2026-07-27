@@ -49,6 +49,12 @@ function createConfigStore(dir) {
       return data.projects[projectId];
     },
 
+    removeProject(projectId) {
+      const data = readAll();
+      if (data.projects) delete data.projects[projectId];
+      writeAll(data);
+    },
+
     /** Claves de alcance global (no ligadas a un proyecto), en la raíz del JSON. */
     getSetting(key) {
       if (key === 'projects') throw new Error('La clave "projects" está reservada');
