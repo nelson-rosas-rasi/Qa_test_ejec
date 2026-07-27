@@ -654,6 +654,10 @@ function stopIcon() {
 }
 
 function renderLogin() {
+  // El login es un gate real: se oculta el resto de la app (sidebar con navegación,
+  // switcher de proyectos, "traer repositorio") para que no se pueda saltar navegando.
+  // Un login exitoso hace location.reload(), que restaura el sidebar ya autenticado.
+  document.querySelector('.sidebar')?.style.setProperty('display', 'none');
   $main.innerHTML = `
     <div class="screen" style="display:grid;place-items:center;padding:40px">
       <div style="width:360px;max-width:100%">
