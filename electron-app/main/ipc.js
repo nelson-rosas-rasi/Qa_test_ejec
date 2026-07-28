@@ -60,7 +60,8 @@ function registerIpc(getWindow) {
   const recordingsStore = createRecordingsStore({ dir: path.join(userData, 'grabaciones') });
   const uploader = createRecordingsUploader({ baseDir: path.join(userData, 'grabaciones-git'), auth });
 
-  const DEFAULT_SERVER_URL = 'http://localhost:8080';
+  // Backend del piloto. Es solo el valor por defecto: Configuración lo sobreescribe.
+  const DEFAULT_SERVER_URL = 'https://reportras-backe.onrender.com';
   const serverSession = createServerSession({ store, safeStorage });
   const serverUrl = () => store.getSetting('serverUrl') || DEFAULT_SERVER_URL;
   // Cliente fresco por uso: así un cambio de URL en Configuración se toma sin reiniciar.

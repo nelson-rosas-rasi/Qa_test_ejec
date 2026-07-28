@@ -313,6 +313,20 @@ function renderProfileSwitcher() {
     else openGithubModal();
   };
   menu.appendChild(githubRow);
+
+  const logoutSeparator = document.createElement('div');
+  logoutSeparator.className = 'profile-menu-sep';
+  menu.appendChild(logoutSeparator);
+
+  const logoutRow = document.createElement('div');
+  logoutRow.className = 'profile-menu-item';
+  logoutRow.innerHTML = `<div style="flex:1;min-width:0;"><div class="label">Cerrar sesión</div><div class="sub">${state.auth?.fullName || state.auth?.username || ''}</div></div>`;
+  logoutRow.onclick = (e) => {
+    e.stopPropagation();
+    state.profileMenuOpen = false;
+    openLogoutModal();
+  };
+  menu.appendChild(logoutRow);
 }
 
 function renderSidebarStatus() {
@@ -671,6 +685,9 @@ function renderLogin() {
           style="width:100%;padding:11px;border:1px solid #dbe3ef;border-radius:8px;box-sizing:border-box">
         <div id="login-error" style="display:none;color:#b91c1c;font-size:12px;margin-top:10px"></div>
         <button class="btn btn-primary" id="login-go" style="width:100%;margin-top:16px">Entrar</button>
+        <div style="color:#64748b;font-size:11px;margin-top:10px;text-align:center">
+          El primer ingreso del día puede tardar un par de minutos mientras el servidor despierta.
+        </div>
       </div>
     </div>`;
 
@@ -944,6 +961,24 @@ function openGithubDisconnectModal() {
     await api.disconnectGithub();
     closeModal();
     await loadGithubStatus();
+  };
+}
+
+function openLogoutModal() {
+  $overlay.hidden = false;
+  $overlay.innerHTML = `<div class="modal" style="width:460px"><div class="modal-pad">
+    <div class="modal-title">Cerrar sesión</div>
+    <div class="modal-sub">Tendrás que volver a entrar con tu usuario y contraseña. Tu cuenta de GitHub no se desconectará.</div>
+    ${state.serverPending > 0 ? `<div style="margin-top:16px;font-size:12px;color:#64748b">Quedan ${state.serverPending} corridas sin enviar. No se perderán: la cola está guardada en disco y se enviará automáticamente la próxima vez que inicies sesión.</div>` : ''}
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="logout-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="logout-confirm">Cerrar sesión</button>
+    </div>
+  </div></div>`;
+  document.getElementById('logout-cancel').onclick = () => closeModal();
+  document.getElementById('logout-confirm').onclick = async () => {
+    await api.logout();
+    location.reload();
   };
 }
 
@@ -1467,6 +1502,7 @@ async function renderResultsMetrics() {
 
 async function renderConfig() {
   const cfg = await api.getProjectConfig(state.project);
+  const serverUrl = await api.getServerUrl();
   const profiles = state.profiles;
   const active = state.profile;
 
@@ -1490,6 +1526,16 @@ async function renderConfig() {
           </div>
           <div class="config-hint">Esta URL se usa para todos los perfiles de este proyecto. Si la dejas vacía, no se generará documentación.</div>
           <div id="config-n8n-status" class="config-hint" style="color:var(--green-dark)"></div>
+        </div>
+
+        <div class="card" style="margin-top:14px">
+          <div class="config-label">Servidor de reportes</div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <input id="config-server" type="text" value="${escapeHtml(serverUrl)}" placeholder="https://mi-backend.onrender.com" style="flex:1;padding:10px;border:1px solid #dbe3ef;border-radius:8px;box-sizing:border-box">
+            <button class="btn btn-primary btn-sm" id="config-server-save">Guardar</button>
+          </div>
+          <div class="config-hint">A dónde se envían las corridas. Aplica a toda la aplicación, no solo a este proyecto. Si lo dejas vacío se usa el valor por defecto.</div>
+          <div id="config-server-status" class="config-hint" style="color:var(--green-dark)"></div>
         </div>
 
         <div class="card" style="margin-top:14px">
@@ -1529,6 +1575,15 @@ async function renderConfig() {
     await api.setN8nUrl(state.project, document.getElementById('config-n8n').value);
     const status = document.getElementById('config-n8n-status');
     status.textContent = 'Guardado.';
+    setTimeout(() => { if (document.body.contains(status)) status.textContent = ''; }, 2500);
+  };
+
+  document.getElementById('config-server-save').onclick = async () => {
+    const res = await api.setServerUrl(document.getElementById('config-server').value);
+    const status = document.getElementById('config-server-status');
+    status.textContent = 'Servidor guardado.';
+    // El main devuelve la URL efectiva: si se guardó vacío, vuelve la de por defecto.
+    if (res && res.serverUrl) document.getElementById('config-server').value = res.serverUrl;
     setTimeout(() => { if (document.body.contains(status)) status.textContent = ''; }, 2500);
   };
 
@@ -1970,8 +2025,8 @@ function createBrowserStub() {
     async authStatus() { return { authenticated: true, user: { username: 'demo', fullName: 'QA Demo', role: 'QA_ANALYST' }, pending: 0 }; },
     async login() { return { ok: true, user: { username: 'demo', fullName: 'QA Demo', role: 'QA_ANALYST' } }; },
     async logout() { return { ok: true }; },
-    async getServerUrl() { return 'http://localhost:8080'; },
-    async setServerUrl() { return { ok: true, serverUrl: 'http://localhost:8080' }; },
+    async getServerUrl() { return 'https://reportras-backe.onrender.com'; },
+    async setServerUrl() { return { ok: true, serverUrl: 'https://reportras-backe.onrender.com' }; },
     async discardResult() { return { ok: true }; },
     onServerPending() {},
   };
