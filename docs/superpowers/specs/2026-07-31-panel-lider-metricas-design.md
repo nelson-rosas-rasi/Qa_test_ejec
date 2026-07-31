@@ -153,6 +153,7 @@ Precisiones:
 | `byUser` / `byProject` | Ordenados por `runs` descendente; a igual cantidad, alfabético, para que el orden sea estable entre llamadas |
 | `trend` | Exactamente 12 entradas, de la más vieja a la más nueva, incluida la semana en curso |
 | `trend[].weekStart` | Lunes de esa semana, `YYYY-MM-DD`. Se agrupa por `startedAt`, no por `receivedAt`: una corrida reportada tarde pertenece a la semana en que se ejecutó |
+| `trend`, corridas sin `startedAt` | `TestRun.startedAt` es anulable. Si falta, la corrida cae en la semana de su `receivedAt`, que siempre existe porque lo pone el servidor. Perderla sería peor: ya cuenta en `general` y el gráfico no cerraría con las tarjetas |
 
 Las fechas se serializan como el resto de la API, en el formato ya fijado por la
 rebanada 1 (`LocalDateTime` → `"2026-07-28T10:15:02.12"`). `weekStart` es un
