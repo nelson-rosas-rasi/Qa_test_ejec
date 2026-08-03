@@ -1,12 +1,15 @@
 {
   "name": "runqa",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "RunQA — ejecuta pruebas Playwright, se actualiza solo y genera reportes Word vía n8n.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder",
-    "release": "electron-builder --publish always",
+    "version:patch": "npm version patch --no-git-tag-version",
+    "version:minor": "npm version minor --no-git-tag-version",
+    "version:major": "npm version major --no-git-tag-version",
+    "release": "node scripts/check-release-config.js && electron-builder --publish always",
     "test": "node --test \"test/*.test.js\""
   },
   "author": "",
@@ -23,16 +26,28 @@
     "productName": "RunQA",
     "publish": {
       "provider": "github",
-      "owner": "CAMBIAME-usuario-u-org",
-      "repo": "runqa-releases"
+      "owner": "nelson-rosas-rasi",
+      "repo": "Qa_test_ejec"
     },
     "win": {
-      "target": "nsis",
+      "target": "nsis-web",
       "icon": "renderer/assets/runqa-icon.ico"
     },
     "nsis": {
+      "oneClick": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
       "createDesktopShortcut": true,
-      "shortcutName": "RunQA"
+      "createStartMenuShortcut": true,
+      "shortcutName": "RunQA",
+      "runAfterFinish": true,
+      "installerIcon": "renderer/assets/runqa-icon.ico",
+      "uninstallerIcon": "renderer/assets/runqa-icon.ico",
+      "uninstallDisplayName": "RunQA ${version}"
+    },
+    "nsisWeb": {
+      "artifactName": "RunQA Installer ${version}.${ext}"
     },
     "mac": {
       "target": "dmg"

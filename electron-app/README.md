@@ -14,6 +14,78 @@ npm install
 npm start
 ```
 
+## Preparación de Node.js
+
+Antes de mostrar el inicio de sesión, RunQA comprueba que `node` y `npm` se
+puedan ejecutar desde el equipo. Se requiere Node.js 18 o superior. Si falta
+alguno o la versión es incompatible, la aplicación muestra una pantalla de
+preparación, bloquea las funciones que dependen de Playwright y permite abrir
+la descarga oficial de Node.js o volver a verificar después de instalarlo.
+
+Esta verificación no instala software ni modifica el `PATH` automáticamente.
+La descarga administrada de un runtime portable se incorporará cuando se haya
+definido una versión fija y su hash de integridad para distribución.
+
+## Versiones y actualizaciones
+
+La versión tiene una única fuente de verdad: `version` en `package.json`. La
+barra superior la obtiene de Electron, por lo que ya no debe editarse el HTML
+al cambiar una versión. Según el alcance del cambio, ejecuta uno de estos
+comandos:
+
+```bash
+npm run version:patch  # 1.4.0 -> 1.4.1: correcciones
+npm run version:minor  # 1.4.0 -> 1.5.0: funcionalidad nueva compatible
+npm run version:major  # 1.4.0 -> 2.0.0: cambio incompatible
+```
+
+Antes de la primera publicación hay que reemplazar `build.publish.owner` y
+`build.publish.repo` en `package.json` por la organización y el repositorio
+reales de GitHub Releases. `npm run release` se niega a publicar mientras
+detecte los valores de ejemplo.
+
+Flujo de publicación recomendado:
+
+```bash
+npm test
+npm run version:minor
+npm run dist
+git add electron-app/package.json electron-app/package-lock.json
+git commit -m "release: RunQA 1.5.0"
+git tag v1.5.0
+git push origin main v1.5.0
+```
+
+La etiqueta activa `.github/workflows/release-runqa.yml`. GitHub ejecuta las
+pruebas en Windows, comprueba que la etiqueta coincida con `package.json` y
+publica los artefactos usando el token del repositorio. Para una versión futura,
+reemplaza `1.5.0` en el ejemplo por la versión que haya generado el comando.
+
+También es posible publicar manualmente desde un equipo Windows con
+`GH_TOKEN=<token-con-permiso> npm run release -- --win`.
+
+La release debe contener el instalador, su `.blockmap` y `latest.yml`. Las
+instalaciones existentes consultan ese último archivo al abrir y cada hora,
+descargan una versión superior en segundo plano y ofrecen reiniciar para
+aplicarla.
+
+## Experiencia del instalador de Windows
+
+`RunQA Installer <versión>.exe` es un instalador web asistido de NSIS. Es una
+descarga inicial pequeña que obtiene el paquete completo desde GitHub Releases.
+El usuario ve el proceso completo y puede:
+
+- elegir si instala para su usuario o para todos, según sus permisos;
+- escoger la carpeta donde se desplegará RunQA;
+- seguir el progreso de descarga, copia e instalación;
+- crear accesos en el escritorio y en el menú Inicio;
+- decidir en la última pantalla si abre RunQA inmediatamente o después.
+
+La instalación crea `Uninstall RunQA.exe` dentro de la carpeta seleccionada y
+también registra RunQA en la sección de aplicaciones instaladas de Windows. Las
+actualizaciones posteriores conservan la ruta elegida y se descargan en segundo
+plano desde GitHub Releases.
+
 ## Cuenta de GitHub
 
 Los repositorios de pruebas son privados, así que la app necesita la cuenta de

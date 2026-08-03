@@ -1,0 +1,49 @@
+name: Publicar RunQA
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: electron-app
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: electron-app/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Preparar repositorio de pruebas de la suite
+        run: npm ci
+        working-directory: electron-app/test-fixtures/sample-repo
+
+      - name: Validar versión de la etiqueta
+        shell: pwsh
+        run: |
+          $packageVersion = node -p "require('./package.json').version"
+          if ("v$packageVersion" -ne "${{ github.ref_name }}") {
+            throw "La etiqueta ${{ github.ref_name }} no coincide con package.json v$packageVersion"
+          }
+
+      - name: Ejecutar pruebas
+        run: npm test
+
+      - name: Construir y publicar instalador
+        run: npm run release -- --win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

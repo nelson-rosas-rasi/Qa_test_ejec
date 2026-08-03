@@ -1,5 +1,6 @@
 const { spawn } = require('node:child_process');
 const { createStreamParser, translate } = require('./events');
+const { nodeProcessEnv } = require('../runtime/node-process');
 
 function buildArgs({ cliPath, testIds, runAll, reporters, visualMode = false, stopOnFail = false }) {
   const args = [cliPath, 'test'];
@@ -42,7 +43,7 @@ function runTests(options, onEvent) {
     testIds = [], runAll = false, visualMode = false, stopOnFail = false,
   } = options;
 
-  const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1', PLAYWRIGHT_HTML_OPEN: 'never' };
+  const env = nodeProcessEnv({ PLAYWRIGHT_HTML_OPEN: 'never' });
   if (profile) env.QA_PROFILE = profile;
 
   const child = spawn(nodePath, buildArgs({ cliPath, testIds, runAll, reporters, visualMode, stopOnFail }), {

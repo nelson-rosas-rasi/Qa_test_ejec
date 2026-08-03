@@ -1,4 +1,5 @@
 const { spawn } = require('node:child_process');
+const { nodeProcessEnv } = require('../runtime/node-process');
 
 /**
  * Lanza Playwright codegen con el CLI del repo (para tener navegadores), cwd en el
@@ -11,7 +12,7 @@ function record({ cliPath, repoPath, url, outFile, nodePath = process.execPath }
     if (url) args.push(url);
     const child = spawn(nodePath, args, {
       cwd: repoPath,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      env: nodeProcessEnv(),
       windowsHide: true,
       stdio: 'ignore',
     });

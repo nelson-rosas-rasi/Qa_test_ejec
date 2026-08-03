@@ -32,6 +32,7 @@ const { createGitAuth } = require('./github/git-auth');
 const { requestDeviceCode, pollForToken } = require('./github/device-flow');
 const { fetchIdentity } = require('./github/identity');
 const { readGithubConfig } = require('./github/config');
+const { checkRuntime } = require('./runtime/check');
 
 /** Empaquetado: el reporter debe vivir fuera de app.asar para que Playwright pueda leerlo. */
 function reporterPath() {
@@ -266,6 +267,11 @@ function registerIpc(getWindow) {
     store.setSetting('serverUrl', String(url || '').trim() || null);
     return { ok: true, serverUrl: serverUrl() };
   });
+
+  /* ---------- preparación del equipo ---------- */
+  ipcMain.handle('runtime:check', () => checkRuntime());
+  ipcMain.handle('runtime:openNodeDownload', () => shell.openExternal('https://nodejs.org/en/download'));
+  ipcMain.handle('app:getVersion', () => app.getVersion());
 
   /* ---------- ventana ---------- */
   ipcMain.on('window:minimize', () => getWindow()?.minimize());

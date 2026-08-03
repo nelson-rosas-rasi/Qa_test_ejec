@@ -1,6 +1,7 @@
 const { execFile } = require('node:child_process');
 const { buildTree } = require('./build-tree');
 const { appError } = require('../errors');
+const { nodeProcessEnv } = require('../runtime/node-process');
 
 /**
  * `nodePath` es `process.execPath`: en la app es el binario de Electron, que con
@@ -13,7 +14,7 @@ function listTests({ repoPath, cliPath, nodePath = process.execPath }) {
       [cliPath, 'test', '--list', '--reporter=json'],
       {
         cwd: repoPath,
-        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+        env: nodeProcessEnv(),
         maxBuffer: 64 * 1024 * 1024,
         windowsHide: true,
       },

@@ -82,6 +82,24 @@ button { font-family: inherit; }
 }
 .sidebar-spacer { flex: 1; }
 
+/* ===== Preparación del equipo ===== */
+.runtime-screen { min-height: 100%; display: grid; place-items: center; padding: 40px; background: var(--bg); }
+.runtime-card { width: 420px; padding: 34px; border: 1px solid var(--line); border-radius: 16px; background: #fff; text-align: center; box-shadow: 0 14px 38px rgba(15,23,42,.08); }
+.runtime-card-wide { width: min(560px, 100%); text-align: left; }
+.runtime-spinner { width: 34px; height: 34px; margin: 0 auto 18px; border: 3px solid var(--accent-border); border-top-color: var(--accent); border-radius: 50%; animation: qspin .8s linear infinite; }
+.runtime-kicker { margin-bottom: 8px; color: var(--accent); font-size: 10.5px; font-weight: 700; letter-spacing: .8px; }
+.runtime-title { color: var(--ink); font-size: 21px; font-weight: 700; }
+.runtime-copy { margin-top: 9px; color: var(--muted); font-size: 13.5px; line-height: 1.55; }
+.runtime-list { display: grid; gap: 9px; margin-top: 22px; }
+.runtime-row { display: flex; align-items: center; gap: 12px; padding: 13px; border: 1px solid var(--line-2); border-radius: 10px; background: #fbfcfe; }
+.runtime-state { width: 27px; height: 27px; display: grid; place-items: center; flex: none; border-radius: 50%; font-size: 13px; font-weight: 700; }
+.runtime-state.ready { color: var(--green-dark); background: var(--green-light); }
+.runtime-state.missing { color: var(--red-dark); background: var(--red-light); }
+.runtime-label { color: var(--ink-2); font-size: 13px; font-weight: 700; }
+.runtime-detail { margin-top: 2px; color: var(--faint); font-size: 11.5px; }
+.runtime-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+.runtime-note { margin-top: 14px; color: var(--faint); font-size: 11px; line-height: 1.45; }
+
 .project-list { display: flex; flex-direction: column; gap: 2px; }
 .project-item { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 7px; cursor: pointer; }
 .project-item:hover { background: #eef2f8; }
