@@ -1,6 +1,7 @@
 name: Publicar RunQA
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*.*.*'
@@ -33,6 +34,7 @@ jobs:
         working-directory: electron-app/test-fixtures/sample-repo
 
       - name: Validar versión de la etiqueta
+        if: github.event_name == 'push'
         shell: pwsh
         run: |
           $packageVersion = node -p "require('./package.json').version"
