@@ -27,7 +27,8 @@
     "publish": {
       "provider": "github",
       "owner": "nelson-rosas-rasi",
-      "repo": "Qa_test_ejec"
+      "repo": "Qa_test_ejec",
+      "releaseType": "release"
     },
     "win": {
       "target": "nsis-web",
