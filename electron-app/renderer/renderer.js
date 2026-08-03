@@ -48,6 +48,7 @@ const state = {
   flash: null,             // aviso breve a mostrar en el detalle (p. ej. n8n no configurado)
   auth: null,            // { username, fullName, role } o null
   serverPending: 0,      // corridas en cola de envío al backend
+  appUpdate: { status: 'idle', version: null, percent: 0, error: null },
 };
 
 const $main = document.getElementById('main');
@@ -58,6 +59,7 @@ init();
 
 async function init() {
   wireTitlebar();
+  wireUpdateEvents();
   const version = await api.getAppVersion();
   document.getElementById('app-version').textContent = `v${version}`;
   if (!await ensureRuntime()) return;
@@ -88,6 +90,46 @@ async function init() {
     state.loadingProject = null;
     renderProjectSwitcher();
   }
+}
+
+async function wireUpdateEvents() {
+  api.onUpdateState((update) => {
+    state.appUpdate = update;
+    renderUpdateToast();
+  });
+  state.appUpdate = await api.getUpdateState();
+  renderUpdateToast();
+}
+
+function renderUpdateToast() {
+  const host = document.getElementById('update-toast-host');
+  const update = state.appUpdate || { status: 'idle' };
+  if (update.status === 'idle') { host.innerHTML = ''; return; }
+
+  const version = update.version ? `RunQA ${escapeHtml(update.version)}` : 'Nueva versión';
+  let content = '';
+  if (update.status === 'available') content = `
+    <div class="update-toast-title">Actualización disponible</div>
+    <div class="update-toast-copy">${version} está lista para descargar.</div>
+    <button class="update-toast-action" id="update-start">Actualizar ahora</button>`;
+  else if (update.status === 'downloading') content = `
+    <div class="update-toast-title">Descargando actualización</div>
+    <div class="update-toast-copy">${version} · ${Math.max(0, Math.min(100, update.percent || 0))}%</div>
+    <div class="update-progress"><span style="width:${Math.max(0, Math.min(100, update.percent || 0))}%"></span></div>`;
+  else if (update.status === 'ready') content = `
+    <div class="update-toast-title">Actualización lista</div>
+    <div class="update-toast-copy">Reinicia RunQA para instalar ${version}.</div>
+    <button class="update-toast-action" id="update-install">Reiniciar y actualizar</button>`;
+  else content = `
+    <div class="update-toast-title">No se pudo actualizar</div>
+    <div class="update-toast-copy">Revisa la conexión e inténtalo nuevamente.</div>
+    <button class="update-toast-action" id="update-start">Reintentar</button>`;
+
+  host.innerHTML = `<aside class="update-toast"><div class="update-toast-icon">↻</div><div class="update-toast-body">${content}</div></aside>`;
+  const start = document.getElementById('update-start');
+  if (start) start.onclick = () => api.startUpdate();
+  const install = document.getElementById('update-install');
+  if (install) install.onclick = () => api.installUpdate();
 }
 
 async function ensureRuntime() {
@@ -1981,7 +2023,9 @@ async function pullRepos(ids) {
 function createBrowserStub() {
   const listeners = { log: [], result: [] };
   return {
-    async getAppVersion() { return '1.5.0'; },
+    async getAppVersion() { return '1.5.1'; },
+    async getUpdateState() { return { status: 'idle', version: null, percent: 0, error: null }; },
+    async startUpdate() {}, async installUpdate() {}, onUpdateState() {},
     async checkRuntime() { return { ok: true, minimumNodeMajor: 18, node: { available: true, version: '22.18.0', major: 22 }, npm: { available: true, version: '10.9.3', major: 10 }, message: 'Node.js y npm están listos.' }; },
     async openNodeDownload() {},
     async listProjects() { return [{ id:'demo', name:'Proyecto demo', defaultBranch:'main' }, { id:'erp', name:'ERP Ventas', defaultBranch:'main' }]; },

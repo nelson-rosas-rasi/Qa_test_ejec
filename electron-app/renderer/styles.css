@@ -420,3 +420,16 @@ button { font-family: inherit; }
   color: #166534;
   background: #dcfce7;
 }
+
+/* ===== Actualización de RunQA ===== */
+.update-toast-host { position: fixed; top: 60px; right: 18px; z-index: 80; width: 340px; pointer-events: none; }
+.update-toast { display: flex; gap: 12px; padding: 16px; border: 1px solid #dbe3ef; border-radius: 13px; background: #fff; box-shadow: 0 16px 42px rgba(15,23,42,.20); pointer-events: auto; animation: update-in .22s ease-out; }
+.update-toast-icon { width: 34px; height: 34px; display: grid; place-items: center; flex: none; border-radius: 10px; color: #fff; background: var(--accent); font-size: 20px; font-weight: 600; }
+.update-toast-body { flex: 1; min-width: 0; }
+.update-toast-title { color: var(--ink); font-size: 14px; font-weight: 700; }
+.update-toast-copy { margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.update-toast-action { margin-top: 11px; padding: 7px 11px; border: 0; border-radius: 7px; color: #fff; background: var(--accent); font-size: 12px; font-weight: 700; cursor: pointer; }
+.update-toast-action:hover { background: var(--accent-dark); }
+.update-progress { height: 7px; margin-top: 11px; overflow: hidden; border-radius: 999px; background: #e8eef7; }
+.update-progress span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .2s ease; }
+@keyframes update-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: translateX(0); } }

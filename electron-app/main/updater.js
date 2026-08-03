@@ -1,4 +1,4 @@
-const { app, dialog, Notification } = require('electron');
+const { app, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
 
 /**
@@ -19,54 +19,61 @@ const { autoUpdater } = require('electron-updater');
 const CHECK_INTERVAL_MS = 60 * 60 * 1000; // vuelve a revisar cada hora
 
 function setupAutoUpdate(getWindow) {
+  let updateState = { status: 'idle', version: null, percent: 0, error: null };
+  const publishState = (patch) => {
+    updateState = { ...updateState, ...patch };
+    getWindow()?.webContents.send('app-update:state', updateState);
+  };
+
+  ipcMain.handle('app-update:getState', () => updateState);
+  ipcMain.handle('app-update:start', async () => {
+    if (updateState.status !== 'available' && updateState.status !== 'error') return updateState;
+    publishState({ status: 'downloading', percent: 0, error: null });
+    try {
+      await autoUpdater.downloadUpdate();
+    } catch (err) {
+      publishState({ status: 'error', error: err?.message || String(err) });
+    }
+    return updateState;
+  });
+  ipcMain.on('app-update:install', () => {
+    if (updateState.status === 'ready') setImmediate(() => autoUpdater.quitAndInstall());
+  });
+
   // En desarrollo no hay metadata de update; evitamos el error y salimos.
   if (!app.isPackaged) {
     console.log('[updater] modo desarrollo: auto-update desactivado.');
     return;
   }
 
-  autoUpdater.autoDownload = true;          // descarga sola al detectar versión nueva
+  autoUpdater.autoDownload = false;         // espera la decisión del usuario en la tarjeta
   autoUpdater.autoInstallOnAppQuit = true;  // si no reinicia ahora, se aplica al cerrar
 
   autoUpdater.on('checking-for-update', () => console.log('[updater] buscando actualizaciones…'));
 
   autoUpdater.on('update-available', (info) => {
-    console.log(`[updater] disponible: v${info.version}. Descargando…`);
-    if (Notification.isSupported()) {
-      new Notification({
-        title: 'RunQA — actualización disponible',
-        body: `Descargando la versión ${info.version} en segundo plano…`,
-      }).show();
-    }
+    console.log(`[updater] disponible: v${info.version}. Esperando confirmación…`);
+    publishState({ status: 'available', version: info.version, percent: 0, error: null });
   });
 
-  autoUpdater.on('update-not-available', () => console.log('[updater] ya estás en la última versión.'));
+  autoUpdater.on('update-not-available', () => {
+    console.log('[updater] ya estás en la última versión.');
+    publishState({ status: 'idle', version: null, percent: 0, error: null });
+  });
 
   autoUpdater.on('download-progress', (p) => {
     console.log(`[updater] ${Math.round(p.percent)}%`);
-    // Opcional: reflejarlo en la UI del renderer.
-    getWindow()?.webContents.send('app-update:progress', Math.round(p.percent));
+    publishState({ status: 'downloading', percent: Math.round(p.percent) });
   });
 
-  autoUpdater.on('update-downloaded', async (info) => {
+  autoUpdater.on('update-downloaded', (info) => {
     console.log(`[updater] v${info.version} lista para instalar.`);
-    const win = getWindow();
-    const { response } = await dialog.showMessageBox(win, {
-      type: 'info',
-      buttons: ['Reiniciar ahora', 'Más tarde'],
-      defaultId: 0,
-      cancelId: 1,
-      title: 'Actualización disponible',
-      message: `RunQA ${info.version} ya está lista.`,
-      detail: 'La aplicación se reiniciará para aplicar la actualización. Si eliges "Más tarde", se instalará automáticamente la próxima vez que cierres RunQA.',
-    });
-    if (response === 0) {
-      setImmediate(() => autoUpdater.quitAndInstall());
-    }
+    publishState({ status: 'ready', version: info.version, percent: 100, error: null });
   });
 
   autoUpdater.on('error', (err) => {
     console.error('[updater] error al actualizar:', err?.message || err);
+    if (updateState.status === 'downloading') publishState({ status: 'error', error: err?.message || String(err) });
   });
 
   const checkForUpdates = () => autoUpdater.checkForUpdates().catch((err) => {

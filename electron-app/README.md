@@ -69,6 +69,10 @@ instalaciones existentes consultan ese último archivo al abrir y cada hora,
 descargan una versión superior en segundo plano y ofrecen reiniciar para
 aplicarla.
 
+Cuando RunQA detecta una versión nueva, muestra una tarjeta en la esquina
+superior derecha. La descarga solo comienza al pulsar **Actualizar ahora**; la
+tarjeta muestra el porcentaje y, al terminar, ofrece **Reiniciar y actualizar**.
+
 ## Experiencia del instalador de Windows
 
 `RunQA Installer <versión>.exe` es un instalador web asistido de NSIS. Es una

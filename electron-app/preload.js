@@ -10,6 +10,10 @@ contextBridge.exposeInMainWorld('qa', {
   checkRuntime: () => ipcRenderer.invoke('runtime:check'),
   openNodeDownload: () => ipcRenderer.invoke('runtime:openNodeDownload'),
   getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
+  getUpdateState: () => ipcRenderer.invoke('app-update:getState'),
+  startUpdate: () => ipcRenderer.invoke('app-update:start'),
+  installUpdate: () => ipcRenderer.send('app-update:install'),
+  onUpdateState: (cb) => ipcRenderer.on('app-update:state', (_e, state) => cb(state)),
 
   // proyectos
   listProjects: () => ipcRenderer.invoke('projects:list'),
