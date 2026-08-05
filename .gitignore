@@ -14,3 +14,10 @@ app-run.log
 
 # Datos de una base Postgres local (no versionar)
 .postgres-data/
+
+# Prefijo de Wine para probar el instalador de Windows (~580 MB, se regenera solo)
+electron-app/.wine-runqa/
+
+# Worktrees y ajustes locales de Claude Code
+.claude/worktrees/
+.claude/settings.local.json
