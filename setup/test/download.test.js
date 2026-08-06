@@ -68,3 +68,9 @@ test('un fallo de escritura rechaza con DOWNLOAD_WRITE_FAILED', async () => {
     (err) => err.code === 'DOWNLOAD_WRITE_FAILED',
   );
 });
+
+test('con verify en false acepta el archivo sin hash conocido', async () => {
+  const dest = tempDest('installer.exe');
+  const ruta = await downloadTo({ url: 'https://ejemplo/installer.exe', dest, sha256: null, verify: false, fetchImpl: fetchFake });
+  assert.equal(ruta, dest);
+});

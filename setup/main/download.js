@@ -8,7 +8,7 @@ function fallo(code, message) {
   return err;
 }
 
-async function downloadTo({ url, dest, sha256, onProgress = () => {}, fetchImpl = fetch }) {
+async function downloadTo({ url, dest, sha256, onProgress = () => {}, fetchImpl = fetch, verify = true }) {
   let host;
   try {
     host = new URL(url).host;
@@ -28,9 +28,11 @@ async function downloadTo({ url, dest, sha256, onProgress = () => {}, fetchImpl 
   const datos = Buffer.from(await respuesta.arrayBuffer());
   onProgress(100);
 
-  const hash = crypto.createHash('sha256').update(datos).digest('hex');
-  if (hash !== sha256) {
-    throw fallo('DOWNLOAD_CORRUPTED', 'La descarga se corrompió. Volvé a intentarlo.');
+  if (verify) {
+    const hash = crypto.createHash('sha256').update(datos).digest('hex');
+    if (hash !== sha256) {
+      throw fallo('DOWNLOAD_CORRUPTED', 'La descarga se corrompió. Volvé a intentarlo.');
+    }
   }
 
   try {
