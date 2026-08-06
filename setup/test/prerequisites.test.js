@@ -21,3 +21,8 @@ test('la url de Node apunta al instalador de la versión declarada', () => {
   assert.ok(prerequisites.node.url.includes(prerequisites.node.version));
   assert.match(prerequisites.node.url, /x64\.msi$/);
 });
+
+test('el asset de Git declarado coincide con el último segmento de la url', () => {
+  const lastSegment = prerequisites.git.url.split('/').pop();
+  assert.equal(prerequisites.git.asset, lastSegment);
+});

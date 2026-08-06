@@ -1,6 +1,7 @@
 {
   "git": {
     "version": "2.55.0",
+    "asset": "Git-2.55.0.3-64-bit.exe",
     "url": "https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.3/Git-2.55.0.3-64-bit.exe",
     "sha256": "af12577d0fdff74243a5988197aa49b957d5044edc17004f6ddf0768996f1dca"
   },
