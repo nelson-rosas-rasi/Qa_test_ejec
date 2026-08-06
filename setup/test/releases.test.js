@@ -33,3 +33,15 @@ test('si GitHub no responde con un release lo dice claro', async () => {
     (err) => err.code === 'RELEASE_NOT_FOUND' && err.message.includes('github.com'),
   );
 });
+
+test('si el cuerpo de la respuesta está corrupto lo maneja con código estándar', async () => {
+  const fetchImpl = () => Promise.resolve({
+    ok: true,
+    status: 200,
+    json: () => Promise.reject(new Error('cuerpo roto')),
+  });
+  await assert.rejects(
+    () => latestInstaller({ owner: 'x', repo: 'y', fetchImpl }),
+    (err) => err.code === 'RELEASE_NOT_FOUND',
+  );
+});

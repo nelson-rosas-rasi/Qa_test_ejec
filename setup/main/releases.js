@@ -20,7 +20,13 @@ async function latestInstaller({ owner, repo, fetchImpl = fetch }) {
   }
   if (!respuesta.ok) throw fallo('github.com no devolvió ninguna versión publicada de RunQA.');
 
-  const release = await respuesta.json();
+  let release;
+  try {
+    release = await respuesta.json();
+  } catch {
+    throw fallo('github.com devolvió una respuesta que no se pudo leer.');
+  }
+
   const asset = (release.assets || []).find((a) => INSTALLER.test(a.name));
   if (!asset) throw fallo('La última versión publicada de RunQA no incluye su instalador.');
 
