@@ -14,18 +14,6 @@ npm install
 npm start
 ```
 
-## Preparación de Node.js
-
-Antes de mostrar el inicio de sesión, RunQA comprueba que `node` y `npm` se
-puedan ejecutar desde el equipo. Se requiere Node.js 18 o superior. Si falta
-alguno o la versión es incompatible, la aplicación muestra una pantalla de
-preparación, bloquea las funciones que dependen de Playwright y permite abrir
-la descarga oficial de Node.js o volver a verificar después de instalarlo.
-
-Esta verificación no instala software ni modifica el `PATH` automáticamente.
-La descarga administrada de un runtime portable se incorporará cuando se haya
-definido una versión fija y su hash de integridad para distribución.
-
 ## Versiones y actualizaciones
 
 La versión tiene una única fuente de verdad: `version` en `package.json`. La

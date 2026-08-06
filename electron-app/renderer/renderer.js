@@ -62,7 +62,6 @@ async function init() {
   wireUpdateEvents();
   const version = await api.getAppVersion();
   document.getElementById('app-version').textContent = `v${version}`;
-  if (!await ensureRuntime()) return;
   wireSidebar();
   wireApiEvents();
   const status = await api.authStatus();
@@ -130,35 +129,6 @@ function renderUpdateToast() {
   if (start) start.onclick = () => api.startUpdate();
   const install = document.getElementById('update-install');
   if (install) install.onclick = () => api.installUpdate();
-}
-
-async function ensureRuntime() {
-  renderRuntimeChecking();
-  const runtime = await api.checkRuntime();
-  if (runtime.ok) return true;
-  renderRuntimeSetup(runtime);
-  return false;
-}
-
-function renderRuntimeChecking() {
-  $main.innerHTML = `<div class="runtime-screen"><div class="runtime-card"><div class="runtime-spinner"></div><div class="runtime-title">Preparando RunQA</div><div class="runtime-copy">Verificando Node.js y npm…</div></div></div>`;
-}
-
-function renderRuntimeSetup(runtime) {
-  const row = (label, item, extra = '') => `<div class="runtime-row"><span class="runtime-state ${item.available ? 'ready' : 'missing'}">${item.available ? '✓' : '!'}</span><div><div class="runtime-label">${label}</div><div class="runtime-detail">${item.available ? `Versión ${escapeHtml(item.version)}${extra}` : escapeHtml(item.error)}</div></div></div>`;
-  $main.innerHTML = `<div class="runtime-screen"><div class="runtime-card runtime-card-wide">
-    <div class="runtime-kicker">CONFIGURACIÓN INICIAL</div>
-    <div class="runtime-title">El equipo todavía no está listo</div>
-    <div class="runtime-copy">${escapeHtml(runtime.message)}</div>
-    <div class="runtime-list">
-      ${row('Node.js', runtime.node, runtime.node.available && runtime.node.major < runtime.minimumNodeMajor ? ` · se requiere ${runtime.minimumNodeMajor} o superior` : '')}
-      ${row('npm', runtime.npm)}
-    </div>
-    <div class="runtime-actions"><button class="btn btn-secondary" id="runtime-retry">Volver a verificar</button><button class="btn btn-primary" id="runtime-download">Descargar Node.js</button></div>
-    <div class="runtime-note">Después de instalar Node.js, cierra el instalador y vuelve a verificar. RunQA no modificará la instalación sin tu autorización.</div>
-  </div></div>`;
-  document.getElementById('runtime-retry').onclick = () => window.location.reload();
-  document.getElementById('runtime-download').onclick = () => api.openNodeDownload();
 }
 
 function wireApiEvents() {
@@ -2026,8 +1996,6 @@ function createBrowserStub() {
     async getAppVersion() { return '1.5.1'; },
     async getUpdateState() { return { status: 'idle', version: null, percent: 0, error: null }; },
     async startUpdate() {}, async installUpdate() {}, onUpdateState() {},
-    async checkRuntime() { return { ok: true, minimumNodeMajor: 18, node: { available: true, version: '22.18.0', major: 22 }, npm: { available: true, version: '10.9.3', major: 10 }, message: 'Node.js y npm están listos.' }; },
-    async openNodeDownload() {},
     async listProjects() { return [{ id:'demo', name:'Proyecto demo', defaultBranch:'main' }, { id:'erp', name:'ERP Ventas', defaultBranch:'main' }]; },
     async initializeProject({ name, repoUrl }) { return { ok:true, project:{ id:'nuevo', name, repoUrl, defaultBranch:'main' } }; },
     async importProjectFolder() { return { canceled:true, ok:false }; },

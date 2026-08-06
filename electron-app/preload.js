@@ -6,9 +6,7 @@ contextBridge.exposeInMainWorld('qa', {
   windowMaximize: () => ipcRenderer.send('window:maximize'),
   windowClose: () => ipcRenderer.send('window:close'),
 
-  // preparación del equipo
-  checkRuntime: () => ipcRenderer.invoke('runtime:check'),
-  openNodeDownload: () => ipcRenderer.invoke('runtime:openNodeDownload'),
+  // aplicación y actualizaciones
   getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
   getUpdateState: () => ipcRenderer.invoke('app-update:getState'),
   startUpdate: () => ipcRenderer.invoke('app-update:start'),
