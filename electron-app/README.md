@@ -23,7 +23,7 @@ comandos:
 
 ```bash
 npm run version:patch  # 1.4.0 -> 1.4.1: correcciones
-npm run version:minor  # 1.4.0 -> 1.5.0: funcionalidad nueva compatible
+npm run version:minor  # 1.5.1 -> 1.6.0: funcionalidad nueva compatible
 npm run version:major  # 1.4.0 -> 2.0.0: cambio incompatible
 ```
 
@@ -39,15 +39,15 @@ npm test
 npm run version:minor
 npm run dist
 git add electron-app/package.json electron-app/package-lock.json
-git commit -m "release: RunQA 1.5.0"
-git tag v1.5.0
-git push origin main v1.5.0
+git commit -m "release: RunQA 1.6.0"
+git tag v1.6.0
+git push origin main v1.6.0
 ```
 
 La etiqueta activa `.github/workflows/release-runqa.yml`. GitHub ejecuta las
 pruebas en Windows, comprueba que la etiqueta coincida con `package.json` y
 publica los artefactos usando el token del repositorio. Para una versión futura,
-reemplaza `1.5.0` en el ejemplo por la versión que haya generado el comando.
+reemplaza `1.6.0` en el ejemplo por la versión que haya generado el comando.
 
 También es posible publicar manualmente desde un equipo Windows con
 `GH_TOKEN=<token-con-permiso> npm run release -- --win`.
