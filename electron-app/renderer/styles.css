@@ -368,6 +368,61 @@ button { font-family: inherit; }
 .btn-sm { font-size: 13px; padding: 8px 14px; }
 .btn[disabled] { opacity: .5; cursor: not-allowed; box-shadow: none; }
 
+/* ===== Asignaciones ===== */
+.assignment-screen { background: var(--bg); }
+.assignment-header .row { align-items: center; }
+.assignment-controls { display: flex; align-items: center; gap: 8px; }
+.assignment-control { min-width: 38px; justify-content: center; padding: 8px 12px; font-size: 18px; line-height: 1; }
+.assignment-today { padding: 8px 13px; font-size: 12.5px; }
+.assignment-month { min-width: 132px; color: var(--ink-2); font-size: 13px; font-weight: 700; text-align: center; }
+.assignment-body { flex: 1; min-height: 0; overflow: auto; padding: 20px 24px 24px; transition: opacity .15s; }
+.assignment-loading { opacity: .58; pointer-events: none; }
+.assignment-error { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 14px; padding: 11px 13px; border: 1px solid #fecaca; border-radius: 9px; color: var(--red-dark); background: var(--red-light); font-size: 12.5px; }
+.assignment-error .btn { padding: 7px 11px; font-size: 12px; }
+.assignment-empty-period { margin-bottom: 14px; padding: 11px 13px; border: 1px dashed var(--line); border-radius: 9px; color: var(--muted); background: #fff; font-size: 12.5px; }
+.assignment-layout { display: grid; grid-template-columns: minmax(600px, 1fr) minmax(250px, 320px); gap: 16px; align-items: start; }
+.assignment-calendar, .assignment-detail { overflow: hidden; border: 1px solid var(--line); border-radius: 11px; background: #fff; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+.assignment-weekdays, .assignment-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.assignment-weekdays { border-bottom: 1px solid var(--line); background: #f8fafc; }
+.assignment-weekdays div { padding: 9px 4px; color: var(--faint); font-size: 10.5px; font-weight: 700; text-align: center; text-transform: uppercase; }
+.assignment-week + .assignment-week { border-top: 1px solid var(--line-2); }
+.assignment-day { min-width: 0; min-height: 98px; padding: 7px; overflow: hidden; border: 0; border-right: 1px solid var(--line-2); color: var(--ink-2); background: #fff; font: inherit; text-align: left; cursor: pointer; }
+.assignment-day:last-child { border-right: 0; }
+.assignment-day:hover { background: #f8fbff; }
+.assignment-day-outside { background: #fafbfc; color: var(--faint); }
+.assignment-day-selected { box-shadow: inset 0 0 0 2px var(--accent); background: var(--accent-light); }
+.assignment-day-number { display: block; margin-bottom: 6px; font-size: 11px; font-weight: 700; }
+.assignment-day-items { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.assignment-chip { display: flex; align-items: center; gap: 5px; min-width: 0; padding: 3px 5px; overflow: hidden; border-radius: 5px; color: var(--ink-3); background: #f4f7fb; font-size: 10px; font-weight: 600; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.assignment-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--accent); }
+.assignment-dot-scheduled { background: var(--accent); }
+.assignment-dot-on-time { background: var(--green); }
+.assignment-dot-late { background: #d97706; }
+.assignment-dot-overdue { background: var(--red); }
+.assignment-dot-cancelled { background: #94a3b8; }
+.assignment-more { padding-left: 5px; color: var(--faint); font-size: 9.5px; }
+.assignment-detail { position: sticky; top: 0; }
+.assignment-detail-heading { padding: 12px 14px; border-bottom: 1px solid var(--line); color: var(--ink-2); background: #f8fafc; font-size: 12px; font-weight: 700; }
+.assignment-detail-list { display: flex; max-height: calc(100vh - 205px); padding: 12px; overflow: auto; flex-direction: column; gap: 10px; }
+.assignment-detail-card { padding: 12px; border: 1px solid var(--line-2); border-radius: 9px; background: #fff; }
+.assignment-detail-title { color: var(--ink); font-size: 13px; font-weight: 700; }
+.assignment-detail-context { margin-top: 4px; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+.assignment-status { display: inline-flex; align-items: center; gap: 6px; margin-top: 9px; padding: 3px 8px; border-radius: 999px; color: var(--ink-3); background: #f1f5f9; font-size: 10.5px; font-weight: 700; }
+.assignment-status span { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.assignment-status-scheduled { color: var(--accent-dark); background: var(--accent-light); }
+.assignment-status-on-time { color: var(--green-dark); background: var(--green-light); }
+.assignment-status-late { color: #92400e; background: #fef3c7; }
+.assignment-status-overdue { color: var(--red-dark); background: var(--red-light); }
+.assignment-status-cancelled { color: #64748b; background: #f1f5f9; }
+.assignment-notes { margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line-2); color: var(--muted); font-size: 11.5px; line-height: 1.45; white-space: pre-wrap; }
+.assignment-detail-empty { padding: 26px 12px; color: var(--faint); font-size: 12px; line-height: 1.5; text-align: center; }
+
+@media (max-width: 1040px) {
+  .assignment-layout { grid-template-columns: 1fr; }
+  .assignment-detail { position: static; }
+  .assignment-detail-list { max-height: none; }
+}
+
 /* ===== Métricas — selector de tests colapsable ===== */
 .picker { border: 1px solid var(--line); border-radius: 10px; background: #fff; margin-bottom: 18px; overflow: hidden; box-shadow: 0 1px 2px rgba(15,23,42,.03); }
 .picker-head { display: flex; align-items: center; gap: 10px; padding: 11px 14px; cursor: pointer; }

@@ -49,6 +49,14 @@ const state = {
   auth: null,            // { username, fullName, role } o null
   serverPending: 0,      // corridas en cola de envío al backend
   appUpdate: { status: 'idle', version: null, percent: 0, error: null },
+  assignments: {
+    cursor: { year: new Date().getFullYear(), month: new Date().getMonth() },
+    selectedDate: null,
+    occurrences: [],
+    loading: false,
+    error: null,
+    requestId: 0,
+  },
 };
 
 const $main = document.getElementById('main');
@@ -182,10 +190,10 @@ function wireSidebar() {
 
   document.querySelectorAll('.nav-item').forEach((el) => {
     el.onclick = () => {
-      document.querySelectorAll('.nav-item').forEach((n) => n.classList.remove('active'));
-      el.classList.add('active');
       state.screen = el.dataset.screen;
-      renderScreen();
+      setActiveNav(state.screen);
+      if (state.screen === 'assignments') loadAssignments();
+      else renderScreen();
     };
   });
 
@@ -193,6 +201,12 @@ function wireSidebar() {
     state.profileMenuOpen = !state.profileMenuOpen;
     renderProfileSwitcher();
   };
+}
+
+function setActiveNav(screen) {
+  document.querySelectorAll('.nav-item').forEach((nav) => {
+    nav.classList.toggle('active', nav.dataset.screen === screen);
+  });
 }
 
 function renderProjectSwitcher() {
@@ -418,6 +432,7 @@ function renderSidebarStatus() {
    SCREEN ROUTER
    ============================================================ */
 function renderScreen() {
+  if (state.screen === 'assignments') return renderAssignments();
   if (!state.project) return renderEmptyProject();
   if (state.project && state.profiles.length === 0) {
     $main.innerHTML = `<div class="screen" style="display:grid;place-items:center;text-align:center;padding:40px">
@@ -434,6 +449,125 @@ function renderScreen() {
   else if (state.screen === 'results') renderResults();
   else if (state.screen === 'config') renderConfig();
   else if (state.screen === 'recordings') renderRecordings();
+}
+
+async function loadAssignments() {
+  const view = state.assignments;
+  const requestId = ++view.requestId;
+  const weeks = RunQaAssignments.monthGrid(view.cursor.year, view.cursor.month);
+  const range = { from: weeks[0][0].iso, to: weeks.at(-1).at(-1).iso };
+  view.loading = true;
+  view.error = null;
+  renderAssignments();
+
+  const res = await api.listAssignments(range);
+  if (requestId !== view.requestId) return;
+  view.loading = false;
+  if (!res.ok) {
+    if (res.code === 'AUTH_REQUIRED' || res.code === 'UNAUTHORIZED') return window.location.reload();
+    view.error = res.error || 'No fue posible cargar tus asignaciones.';
+  } else {
+    view.occurrences = res.data || [];
+  }
+  renderAssignments();
+}
+
+function openAssignmentsDate(targetDate) {
+  const selection = RunQaAssignments.selectionForDate(targetDate);
+  if (!selection) return;
+  state.screen = 'assignments';
+  state.assignments.cursor = selection.cursor;
+  state.assignments.selectedDate = selection.selectedDate;
+  setActiveNav('assignments');
+  loadAssignments();
+}
+
+function renderAssignments() {
+  const view = state.assignments;
+  const weeks = RunQaAssignments.monthGrid(view.cursor.year, view.cursor.month);
+  const grouped = RunQaAssignments.groupByDate(view.occurrences);
+  const selectedItems = view.selectedDate ? (grouped[view.selectedDate] || []) : [];
+  const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+
+  const dayDetails = selectedItems.length > 0
+    ? selectedItems.map((occurrence) => {
+      const status = RunQaAssignments.statusMeta(occurrence.status);
+      const context = [occurrence.projectName, occurrence.moduleName].filter(Boolean).join(' · ');
+      return `<article class="assignment-detail-card">
+        <div class="assignment-detail-title">${escapeHtml(occurrence.title || 'Asignación')}</div>
+        ${context ? `<div class="assignment-detail-context">${escapeHtml(context)}</div>` : ''}
+        <div class="assignment-status assignment-status-${status.className}"><span></span>${escapeHtml(status.label)}</div>
+        ${occurrence.notes ? `<div class="assignment-notes">${escapeHtml(occurrence.notes)}</div>` : ''}
+      </article>`;
+    }).join('')
+    : `<div class="assignment-detail-empty">${view.selectedDate ? 'No tienes asignaciones para este día.' : 'Selecciona un día para ver el detalle.'}</div>`;
+
+  $main.innerHTML = `<div class="screen assignment-screen">
+    <div class="screen-header assignment-header">
+      <div class="row">
+        <div><div class="screen-title">Asignaciones</div><div class="screen-subtitle">Tu calendario personal de pruebas asignadas por Infraestructura.</div></div>
+        <div class="assignment-controls">
+          <button class="btn btn-secondary assignment-control" id="assignment-prev" aria-label="Mes anterior">‹</button>
+          <button class="btn btn-secondary assignment-today" id="assignment-today">Hoy</button>
+          <div class="assignment-month">${escapeHtml(RunQaAssignments.monthLabel(view.cursor.year, view.cursor.month))}</div>
+          <button class="btn btn-secondary assignment-control" id="assignment-next" aria-label="Mes siguiente">›</button>
+        </div>
+      </div>
+    </div>
+    <div class="assignment-body${view.loading ? ' assignment-loading' : ''}">
+      ${view.error ? `<div class="assignment-error"><span>${escapeHtml(view.error)}</span><button class="btn btn-secondary" id="assignment-retry">Reintentar</button></div>` : ''}
+      ${view.occurrences.length === 0 && !view.loading && !view.error ? '<div class="assignment-empty-period">Sin asignaciones para este período.</div>' : ''}
+      <div class="assignment-layout">
+        <section class="assignment-calendar">
+          <div class="assignment-weekdays">${dayNames.map(day => `<div>${day}</div>`).join('')}</div>
+          <div class="assignment-weeks">
+            ${weeks.map(week => `<div class="assignment-week">${week.map(day => {
+              const items = grouped[day.iso] || [];
+              const selected = day.iso === view.selectedDate;
+              return `<button class="assignment-day${day.inMonth ? '' : ' assignment-day-outside'}${selected ? ' assignment-day-selected' : ''}" data-assignment-date="${day.iso}">
+                <span class="assignment-day-number">${day.date.getDate()}</span>
+                <span class="assignment-day-items">${items.slice(0, 3).map((occurrence) => {
+                  const status = RunQaAssignments.statusMeta(occurrence.status);
+                  return `<span class="assignment-chip"><i class="assignment-dot assignment-dot-${status.className}"></i>${escapeHtml(occurrence.title || 'Asignación')}</span>`;
+                }).join('')}${items.length > 3 ? `<span class="assignment-more">+${items.length - 3} más</span>` : ''}</span>
+              </button>`;
+            }).join('')}</div>`).join('')}
+          </div>
+        </section>
+        <aside class="assignment-detail">
+          <div class="assignment-detail-heading">${view.selectedDate ? `Detalle · ${escapeHtml(view.selectedDate)}` : 'Detalle del día'}</div>
+          <div class="assignment-detail-list">${dayDetails}</div>
+        </aside>
+      </div>
+    </div>
+  </div>`;
+
+  document.getElementById('assignment-prev').onclick = () => {
+    view.cursor = RunQaAssignments.addMonths(view.cursor.year, view.cursor.month, -1);
+    view.selectedDate = null;
+    loadAssignments();
+  };
+  document.getElementById('assignment-next').onclick = () => {
+    view.cursor = RunQaAssignments.addMonths(view.cursor.year, view.cursor.month, 1);
+    view.selectedDate = null;
+    loadAssignments();
+  };
+  document.getElementById('assignment-today').onclick = () => {
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const selection = RunQaAssignments.selectionForDate(today);
+    view.cursor = selection.cursor;
+    view.selectedDate = selection.selectedDate;
+    loadAssignments();
+  };
+  const retry = document.getElementById('assignment-retry');
+  if (retry) retry.onclick = () => loadAssignments();
+  document.querySelectorAll('[data-assignment-date]').forEach((day) => {
+    day.onclick = () => {
+      view.selectedDate = day.dataset.assignmentDate;
+      renderAssignments();
+    };
+  });
 }
 
 /* ============================================================
@@ -1085,7 +1219,7 @@ async function startRun() {
   state.running = true;
 
   state.screen = 'live';
-  document.querySelectorAll('.nav-item').forEach((n) => n.classList.toggle('active', n.dataset.screen === 'live'));
+  setActiveNav('live');
   renderLive();
 
   const result = await api.startRun({
@@ -1237,7 +1371,7 @@ function renderSaveDecision() {
 function goToResults(view) {
   state.resultsView = view;
   state.screen = 'results';
-  document.querySelectorAll('.nav-item').forEach((n) => n.classList.toggle('active', n.dataset.screen === 'results'));
+  setActiveNav('results');
   renderScreen();
 }
 
@@ -1697,7 +1831,7 @@ async function afterRemoval() {
   projects = await api.listProjects();
   state.project = projects[0]?.id || null;
   state.screen = 'dashboard';
-  document.querySelectorAll('.nav-item').forEach((n) => n.classList.toggle('active', n.dataset.screen === 'dashboard'));
+  setActiveNav('dashboard');
   renderProjectSwitcher();
   if (!state.project) {
     state.profiles = [];
@@ -1997,6 +2131,17 @@ function createBrowserStub() {
     async getUpdateState() { return { status: 'idle', version: null, percent: 0, error: null }; },
     async startUpdate() {}, async installUpdate() {}, onUpdateState() {},
     async listProjects() { return [{ id:'demo', name:'Proyecto demo', defaultBranch:'main' }, { id:'erp', name:'ERP Ventas', defaultBranch:'main' }]; },
+    async listAssignments() {
+      const now = new Date();
+      const date = (day) => `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      return { ok: true, data: [
+        { id: 1, dueDate: date(5), title: 'Pruebas de autenticación', projectName: 'Portal', moduleName: 'Login', status: 'SCHEDULED', notes: 'Validar perfiles QA.' },
+        { id: 2, dueDate: date(8), title: 'Regresión de facturación', projectName: 'ERP Ventas', moduleName: 'Facturas', status: 'ON_TIME' },
+        { id: 3, dueDate: date(12), title: 'Pruebas de cartera', projectName: 'ERP Ventas', moduleName: 'Cartera', status: 'LATE' },
+        { id: 4, dueDate: date(16), title: 'Flujo de compras', projectName: 'ERP Ventas', moduleName: null, status: 'OVERDUE', notes: 'Prioridad alta.' },
+        { id: 5, dueDate: date(21), title: 'Integración cancelada', projectName: 'Portal', moduleName: 'API', status: 'CANCELLED' },
+      ] };
+    },
     async initializeProject({ name, repoUrl }) { return { ok:true, project:{ id:'nuevo', name, repoUrl, defaultBranch:'main' } }; },
     async importProjectFolder() { return { canceled:true, ok:false }; },
     async prepareProject(projectId) { await new Promise((r) => setTimeout(r, 600)); return { ok:true, project:{ id:projectId, name:'Proyecto demo', defaultBranch:'main' } }; },
@@ -2069,8 +2214,8 @@ function createBrowserStub() {
     async recordFlow() { return { ok: false }; }, async renameRecording() {},
     async removeRecording() {}, async recordingBranches() { return { ok: true, branches: [] }; },
     async uploadRecording() { return { ok: false }; },
-    async authStatus() { return { authenticated: true, user: { username: 'demo', fullName: 'QA Demo', role: 'QA_ANALYST' }, pending: 0 }; },
-    async login() { return { ok: true, user: { username: 'demo', fullName: 'QA Demo', role: 'QA_ANALYST' } }; },
+    async authStatus() { return { authenticated: true, user: { username: 'demo', fullName: 'QA Demo', role: 'QA' }, pending: 0 }; },
+    async login() { return { ok: true, user: { username: 'demo', fullName: 'QA Demo', role: 'QA' } }; },
     async logout() { return { ok: true }; },
     async getServerUrl() { return 'https://reportras-backe.onrender.com'; },
     async setServerUrl() { return { ok: true, serverUrl: 'https://reportras-backe.onrender.com' }; },
