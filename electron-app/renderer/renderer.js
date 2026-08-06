@@ -57,6 +57,11 @@ const state = {
     error: null,
     requestId: 0,
   },
+  notifications: [],
+  notificationsOpen: false,
+  notificationsError: null,
+  notificationsLoading: false,
+  notificationTimer: null,
 };
 
 const $main = document.getElementById('main');
@@ -77,6 +82,10 @@ async function init() {
   state.serverPending = status.pending || 0;
   api.onServerPending((n) => { state.serverPending = n; renderSidebarStatus(); });
   if (!state.auth) { renderLogin(); return; }
+  api.onOpenAssignmentDate(targetDate => openAssignmentsDate(targetDate));
+  window.addEventListener('focus', refreshNotifications);
+  window.addEventListener('beforeunload', stopNotificationPolling);
+  startNotificationPolling();
   await loadGithubStatus();
   projects = await api.listProjects();
   state.project = projects[0]?.id || null;
@@ -139,6 +148,133 @@ function renderUpdateToast() {
   if (install) install.onclick = () => api.installUpdate();
 }
 
+async function refreshNotifications() {
+  if (state.notificationsLoading) return;
+  state.notificationsLoading = true;
+  try {
+    const res = await api.listNotifications({ unreadOnly: false });
+    if (!res.ok) {
+      if (res.code === 'AUTH_REQUIRED' || res.code === 'UNAUTHORIZED') {
+        stopNotificationPolling();
+        return window.location.reload();
+      }
+      state.notificationsError = res.error || 'No fue posible actualizar las notificaciones.';
+      return;
+    }
+    state.notifications = res.data || [];
+    state.notificationsError = null;
+  } catch (error) {
+    state.notificationsError = error?.message || 'No fue posible actualizar las notificaciones.';
+  } finally {
+    state.notificationsLoading = false;
+    renderNotificationBell();
+  }
+}
+
+function startNotificationPolling() {
+  renderNotificationBell();
+  refreshNotifications();
+  clearInterval(state.notificationTimer);
+  state.notificationTimer = setInterval(refreshNotifications, 60_000);
+}
+
+function stopNotificationPolling() {
+  clearInterval(state.notificationTimer);
+  state.notificationTimer = null;
+  window.removeEventListener('focus', refreshNotifications);
+}
+
+async function openNotification(notification) {
+  const plan = RunQaNotifications.clickPlan(notification);
+  state.notificationsOpen = false;
+  renderNotificationBell();
+  if (plan.targetDate) openAssignmentsDate(plan.targetDate);
+  if (!plan.shouldMarkRead) return;
+
+  let res;
+  try {
+    res = await api.markNotificationRead(notification.id);
+  } catch (error) {
+    res = { ok: false, error: error?.message };
+  }
+  if (res.ok) {
+    state.notifications = state.notifications.map(item => (
+      String(item.id) === String(notification.id) ? { ...item, read: true } : item
+    ));
+    state.notificationsError = null;
+  } else {
+    if (res.code === 'AUTH_REQUIRED' || res.code === 'UNAUTHORIZED') {
+      stopNotificationPolling();
+      return window.location.reload();
+    }
+    state.notificationsError = res.error || 'No fue posible marcar la notificación como leída.';
+    state.notificationsOpen = true;
+  }
+  renderNotificationBell();
+}
+
+async function markAllNotificationsRead() {
+  let res;
+  try {
+    res = await api.markAllNotificationsRead();
+  } catch (error) {
+    res = { ok: false, error: error?.message };
+  }
+  if (res.ok) {
+    state.notifications = state.notifications.map(item => ({ ...item, read: true }));
+    state.notificationsError = null;
+  } else {
+    if (res.code === 'AUTH_REQUIRED' || res.code === 'UNAUTHORIZED') {
+      stopNotificationPolling();
+      return window.location.reload();
+    }
+    state.notificationsError = res.error || 'No fue posible marcar todas como leídas.';
+  }
+  renderNotificationBell();
+}
+
+function renderNotificationBell() {
+  const center = document.getElementById('notification-center');
+  const badge = document.getElementById('notification-badge');
+  const dropdown = document.getElementById('notification-dropdown');
+  if (!center || !badge || !dropdown) return;
+  center.hidden = !state.auth;
+  if (!state.auth) return;
+
+  const unread = RunQaNotifications.unreadCount(state.notifications);
+  const badgeLabel = RunQaNotifications.badgeText(unread);
+  badge.hidden = !badgeLabel;
+  badge.textContent = badgeLabel;
+  dropdown.hidden = !state.notificationsOpen;
+  if (!state.notificationsOpen) return;
+
+  const items = state.notifications.slice(0, 20);
+  dropdown.innerHTML = `<div class="notification-head">
+    <span>Notificaciones</span>
+    ${unread > 0 ? '<button id="notification-read-all">Marcar todas</button>' : ''}
+  </div>
+  ${state.notificationsError ? `<div class="notification-error">${escapeHtml(state.notificationsError)}</div>` : ''}
+  ${items.length === 0 && !state.notificationsError ? `<div class="notification-empty">${state.notificationsLoading ? 'Actualizando…' : 'Sin notificaciones.'}</div>` : ''}
+  <div class="notification-list">${items.map(item => `<button class="notification-item${item.read ? '' : ' notification-unread'}" data-notification-id="${escapeHtml(item.id)}">
+    <span class="notification-item-title">${escapeHtml(item.title || 'Notificación')}</span>
+    <span class="notification-item-message">${escapeHtml(item.message || '')}</span>
+    ${item.targetDate ? `<span class="notification-item-date">${escapeHtml(item.targetDate)}</span>` : ''}
+  </button>`).join('')}</div>`;
+
+  const readAll = document.getElementById('notification-read-all');
+  if (readAll) readAll.onclick = (event) => {
+    event.stopPropagation();
+    markAllNotificationsRead();
+  };
+  dropdown.querySelectorAll('[data-notification-id]').forEach(item => {
+    item.onclick = (event) => {
+      event.stopPropagation();
+      const notification = state.notifications.find(candidate => String(candidate.id) === item.dataset.notificationId);
+      if (notification) openNotification(notification);
+    };
+  });
+}
+
 function wireApiEvents() {
   api.onRunLog((entry) => {
     state.runLog.push(entry);
@@ -180,6 +316,18 @@ function wireTitlebar() {
   document.getElementById('btn-min').onclick = () => api.windowMinimize();
   document.getElementById('btn-max').onclick = () => api.windowMaximize();
   document.getElementById('btn-close').onclick = () => api.windowClose();
+  document.getElementById('notification-button').onclick = (event) => {
+    event.stopPropagation();
+    state.notificationsOpen = !state.notificationsOpen;
+    renderNotificationBell();
+  };
+  document.addEventListener('click', (event) => {
+    const center = document.getElementById('notification-center');
+    if (state.notificationsOpen && center && !center.contains(event.target)) {
+      state.notificationsOpen = false;
+      renderNotificationBell();
+    }
+  });
 }
 
 /* ============================================================
@@ -464,7 +612,10 @@ async function loadAssignments() {
   if (requestId !== view.requestId) return;
   view.loading = false;
   if (!res.ok) {
-    if (res.code === 'AUTH_REQUIRED' || res.code === 'UNAUTHORIZED') return window.location.reload();
+    if (res.code === 'AUTH_REQUIRED' || res.code === 'UNAUTHORIZED') {
+      stopNotificationPolling();
+      return window.location.reload();
+    }
     view.error = res.error || 'No fue posible cargar tus asignaciones.';
   } else {
     view.occurrences = res.data || [];
@@ -1155,6 +1306,7 @@ function openLogoutModal() {
   </div></div>`;
   document.getElementById('logout-cancel').onclick = () => closeModal();
   document.getElementById('logout-confirm').onclick = async () => {
+    stopNotificationPolling();
     await api.logout();
     location.reload();
   };
@@ -2126,14 +2278,19 @@ async function pullRepos(ids) {
    ============================================================ */
 function createBrowserStub() {
   const listeners = { log: [], result: [] };
+  const now = new Date();
+  const date = (day) => `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  const stubNotifications = [
+    { id: 1, type: 'EXECUTION_ASSIGNED', title: 'Nueva asignación', message: 'Pruebas de autenticación', targetDate: date(5), read: false },
+    { id: 2, type: 'EXECUTION_UPDATED', title: 'Asignación actualizada', message: 'Cambió la nota de Regresión de facturación', targetDate: date(8), read: false },
+    { id: 3, type: 'EXECUTION_DUE_TODAY', title: 'Ejecución para hoy', message: 'Pruebas de cartera', targetDate: date(12), read: true },
+  ];
   return {
     async getAppVersion() { return '1.5.1'; },
     async getUpdateState() { return { status: 'idle', version: null, percent: 0, error: null }; },
     async startUpdate() {}, async installUpdate() {}, onUpdateState() {},
     async listProjects() { return [{ id:'demo', name:'Proyecto demo', defaultBranch:'main' }, { id:'erp', name:'ERP Ventas', defaultBranch:'main' }]; },
     async listAssignments() {
-      const now = new Date();
-      const date = (day) => `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       return { ok: true, data: [
         { id: 1, dueDate: date(5), title: 'Pruebas de autenticación', projectName: 'Portal', moduleName: 'Login', status: 'SCHEDULED', notes: 'Validar perfiles QA.' },
         { id: 2, dueDate: date(8), title: 'Regresión de facturación', projectName: 'ERP Ventas', moduleName: 'Facturas', status: 'ON_TIME' },
@@ -2217,6 +2374,17 @@ function createBrowserStub() {
     async authStatus() { return { authenticated: true, user: { username: 'demo', fullName: 'QA Demo', role: 'QA' }, pending: 0 }; },
     async login() { return { ok: true, user: { username: 'demo', fullName: 'QA Demo', role: 'QA' } }; },
     async logout() { return { ok: true }; },
+    async listNotifications() { return { ok: true, data: stubNotifications.map(item => ({ ...item })) }; },
+    async markNotificationRead(id) {
+      const item = stubNotifications.find(notification => String(notification.id) === String(id));
+      if (item) item.read = true;
+      return { ok: true, data: null };
+    },
+    async markAllNotificationsRead() {
+      stubNotifications.forEach(notification => { notification.read = true; });
+      return { ok: true, data: null };
+    },
+    onOpenAssignmentDate() {},
     async getServerUrl() { return 'https://reportras-backe.onrender.com'; },
     async setServerUrl() { return { ok: true, serverUrl: 'https://reportras-backe.onrender.com' }; },
     async discardResult() { return { ok: true }; },

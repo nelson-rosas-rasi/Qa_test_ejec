@@ -17,6 +17,13 @@
       <span class="titlebar-version" id="app-version"></span>
     </div>
     <div class="titlebar-controls">
+      <div class="notification-center" id="notification-center" hidden>
+        <button class="tb-btn notification-button" id="notification-button" title="Notificaciones" aria-label="Notificaciones">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
+          <span class="notification-badge" id="notification-badge" hidden></span>
+        </button>
+        <div class="notification-dropdown" id="notification-dropdown" hidden></div>
+      </div>
       <button class="tb-btn" id="btn-min" title="Minimizar">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>
       </button>
@@ -96,6 +103,7 @@
   <div class="update-toast-host" id="update-toast-host"></div>
 
   <script src="assignments.js"></script>
+  <script src="notifications.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>
