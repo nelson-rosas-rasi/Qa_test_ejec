@@ -9,7 +9,12 @@ function fallo(code, message) {
 }
 
 async function downloadTo({ url, dest, sha256, onProgress = () => {}, fetchImpl = fetch }) {
-  const host = new URL(url).host;
+  let host;
+  try {
+    host = new URL(url).host;
+  } catch {
+    throw fallo('DOWNLOAD_FAILED', 'La URL de descarga es inválida. Contactá al administrador.');
+  }
   let respuesta;
   try {
     respuesta = await fetchImpl(url);
@@ -28,8 +33,12 @@ async function downloadTo({ url, dest, sha256, onProgress = () => {}, fetchImpl 
     throw fallo('DOWNLOAD_CORRUPTED', 'La descarga se corrompió. Volvé a intentarlo.');
   }
 
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.writeFileSync(dest, datos);
+  try {
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, datos);
+  } catch {
+    throw fallo('DOWNLOAD_WRITE_FAILED', 'No se pudo guardar el archivo descargado. Revisá el espacio disponible en el disco.');
+  }
   return dest;
 }
 

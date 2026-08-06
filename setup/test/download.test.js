@@ -49,3 +49,22 @@ test('una respuesta con error nombra el servidor que falló', async () => {
     (err) => err.code === 'DOWNLOAD_FAILED' && err.message.includes('nodejs.org'),
   );
 });
+
+test('una URL malformada rechaza con DOWNLOAD_FAILED', async () => {
+  const dest = tempDest('archivo.bin');
+  await assert.rejects(
+    () => downloadTo({ url: 'no-es-una-url', dest, sha256: HASH, fetchImpl: fetchFake }),
+    (err) => err.code === 'DOWNLOAD_FAILED',
+  );
+});
+
+test('un fallo de escritura rechaza con DOWNLOAD_WRITE_FAILED', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'runqa-setup-'));
+  const archivo = path.join(tmpDir, 'bloqueador');
+  fs.writeFileSync(archivo, 'contenido');
+  const dest = path.join(archivo, 'no-puede-escribir.bin');
+  await assert.rejects(
+    () => downloadTo({ url: 'https://ejemplo/archivo.bin', dest, sha256: HASH, fetchImpl: fetchFake }),
+    (err) => err.code === 'DOWNLOAD_WRITE_FAILED',
+  );
+});
