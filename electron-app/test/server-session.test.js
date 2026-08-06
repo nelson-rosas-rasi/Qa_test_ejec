@@ -25,7 +25,7 @@ function jwtWithExp(expSeconds) {
 test('guarda y recupera la sesión', () => {
   const store = fakeStore();
   const token = jwtWithExp(Math.floor(Date.now() / 1000) + 3600);
-  createServerSession({ store, safeStorage: fakeSafeStorage() }).save(token, { username: 'ana', role: 'QA_ANALYST' });
+  createServerSession({ store, safeStorage: fakeSafeStorage() }).save(token, { username: 'ana', role: 'QA' });
   const loaded = createServerSession({ store, safeStorage: fakeSafeStorage() }).load();
   assert.equal(loaded.token, token);
   assert.equal(loaded.user.username, 'ana');
@@ -34,7 +34,7 @@ test('guarda y recupera la sesión', () => {
 test('el token no queda en claro en el store', () => {
   const store = fakeStore();
   const token = jwtWithExp(Math.floor(Date.now() / 1000) + 3600);
-  createServerSession({ store, safeStorage: fakeSafeStorage() }).save(token, { username: 'ana' });
+  createServerSession({ store, safeStorage: fakeSafeStorage() }).save(token, { username: 'ana', role: 'QA' });
   assert.equal(JSON.stringify(store.getSetting('serverSession')).includes(token), false);
 });
 
@@ -44,7 +44,7 @@ test('sin sesión devuelve null', () => {
 
 test('cifrado de otra cuenta de Windows -> load devuelve null, no rompe', () => {
   const store = fakeStore();
-  createServerSession({ store, safeStorage: fakeSafeStorage() }).save(jwtWithExp(9999999999), { username: 'ana' });
+  createServerSession({ store, safeStorage: fakeSafeStorage() }).save(jwtWithExp(9999999999), { username: 'ana', role: 'QA' });
   const roto = { ...fakeSafeStorage(), decryptString: () => { throw new Error('otra cuenta'); } };
   assert.equal(createServerSession({ store, safeStorage: roto }).load(), null);
 });
@@ -63,7 +63,13 @@ test('isExpired: un token ilegible es tratado como expirado', () => {
 test('clear borra la sesión', () => {
   const store = fakeStore();
   const s = createServerSession({ store, safeStorage: fakeSafeStorage() });
-  s.save(jwtWithExp(9999999999), { username: 'ana' });
+  s.save(jwtWithExp(9999999999), { username: 'ana', role: 'QA' });
   s.clear();
   assert.equal(s.load(), null);
+});
+
+test('un rol eliminado no se considera una sesión vigente', () => {
+  const session = createServerSession({ store: fakeStore(), safeStorage: fakeSafeStorage() });
+  session.save(jwtWithExp(9999999999), { username: 'ana', role: 'ROL_ANTERIOR' });
+  assert.equal(session.load(), null);
 });

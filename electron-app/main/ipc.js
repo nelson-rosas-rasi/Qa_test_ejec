@@ -66,6 +66,16 @@ function registerIpc(getWindow) {
   const serverUrl = () => store.getSetting('serverUrl') || DEFAULT_SERVER_URL;
   // Cliente fresco por uso: así un cambio de URL en Configuración se toma sin reiniciar.
   const newServerClient = () => createServerClient({ baseUrl: serverUrl() });
+  async function withSession(action) {
+    const session = serverSession.load();
+    if (!session || serverSession.isExpired(session.token)) {
+      if (session) serverSession.clear();
+      return { ok: false, code: 'AUTH_REQUIRED', error: 'Inicia sesión para continuar.' };
+    }
+    const result = await action(session.token);
+    if (result?.code === 'UNAUTHORIZED') serverSession.clear();
+    return result;
+  }
   const outbox = createOutbox({ dir: path.join(userData, 'outbox') });
   const serverSender = createSender({
     outbox,
@@ -260,6 +270,15 @@ function registerIpc(getWindow) {
     if (!s) return { authenticated: false };
     return { authenticated: !serverSession.isExpired(s.token), user: s.user, pending: outbox.list().length };
   });
+
+  ipcMain.handle('assignments:list', (_event, range) => withSession(
+    token => newServerClient().listOccurrences(token, range)));
+  ipcMain.handle('notifications:list', (_event, options) => withSession(
+    token => newServerClient().listNotifications(token, options)));
+  ipcMain.handle('notifications:read', (_event, id) => withSession(
+    token => newServerClient().markNotificationRead(token, id)));
+  ipcMain.handle('notifications:readAll', () => withSession(
+    token => newServerClient().markAllNotificationsRead(token)));
 
   ipcMain.handle('config:getServerUrl', () => serverUrl());
   ipcMain.handle('config:setServerUrl', (_event, url) => {

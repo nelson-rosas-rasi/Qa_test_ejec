@@ -6,6 +6,32 @@
 function createServerClient({ baseUrl, fetchImpl = fetch }) {
   const url = (path) => `${String(baseUrl).replace(/\/$/, '')}${path}`;
 
+  function normalizeResult({ res, data, networkError }) {
+    if (networkError) return { ok: false, code: 'NETWORK', error: networkError };
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, status: res.status, code: 'UNAUTHORIZED', error: 'La sesión no es válida.' };
+    }
+    if (res.ok) return { ok: true, data: data?.data ?? null };
+    return {
+      ok: false,
+      status: res.status,
+      code: 'SERVER',
+      error: data?.message || `El servidor respondió ${res.status}`,
+    };
+  }
+
+  function isIsoDate(value) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '');
+    if (!match) return false;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    return date.getUTCFullYear() === year
+      && date.getUTCMonth() === month - 1
+      && date.getUTCDate() === day;
+  }
+
   async function call(path, { method = 'POST', token = null, body = null } = {}) {
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers.Authorization = `Bearer ${token}`;
@@ -44,6 +70,29 @@ function createServerClient({ baseUrl, fetchImpl = fetch }) {
       if (res.status === 401 || res.status === 403) return { ok: false, status: res.status, code: 'UNAUTHORIZED' };
       if (res.ok) return { ok: true };
       return { ok: false, status: res.status, code: 'SERVER', error: `El servidor respondió ${res.status}` };
+    },
+
+    async listOccurrences(token, { from, to } = {}) {
+      if (!isIsoDate(from) || !isIsoDate(to)) {
+        return { ok: false, code: 'INVALID_RANGE', error: 'El rango de fechas no es válido.' };
+      }
+      const query = new URLSearchParams({ from, to });
+      return normalizeResult(await call(`/api/executions/occurrences?${query}`, { method: 'GET', token }));
+    },
+
+    async listNotifications(token, { unreadOnly = false } = {}) {
+      const query = new URLSearchParams({ unreadOnly: String(Boolean(unreadOnly)) });
+      return normalizeResult(await call(`/api/notifications?${query}`, { method: 'GET', token }));
+    },
+
+    async markNotificationRead(token, id) {
+      return normalizeResult(await call(`/api/notifications/${encodeURIComponent(String(id))}/read`, {
+        method: 'PATCH', token,
+      }));
+    },
+
+    async markAllNotificationsRead(token) {
+      return normalizeResult(await call('/api/notifications/read-all', { method: 'PATCH', token }));
     },
   };
 }

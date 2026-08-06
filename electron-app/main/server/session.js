@@ -1,6 +1,7 @@
 const { appError } = require('../errors');
 
 const KEY = 'serverSession';
+const CURRENT_ROLES = new Set(['INFRA', 'QA']);
 
 /** Lee el claim `exp` (segundos epoch) del payload de un JWT, sin verificar la firma. */
 function readExp(token) {
@@ -34,6 +35,10 @@ function createServerSession({ store, safeStorage }) {
     load() {
       const saved = store.getSetting(KEY);
       if (!saved?.token || !safeStorage.isEncryptionAvailable()) return null;
+      if (!CURRENT_ROLES.has(saved.user?.role)) {
+        store.setSetting(KEY, null);
+        return null;
+      }
       try {
         const token = safeStorage.decryptString(Buffer.from(saved.token, 'base64'));
         const exp = readExp(token);
