@@ -6,7 +6,7 @@ function validId(id) {
   return Number.isInteger(id) || (typeof id === 'string' && id.length > 0);
 }
 
-function createNativeNotificationService({ store, show }) {
+function createNativeNotificationService({ store, show, namespace = () => 'default' }) {
   function loadIds() {
     const saved = store.getSetting(STORE_KEY);
     if (!Array.isArray(saved)) return [];
@@ -17,10 +17,11 @@ function createNativeNotificationService({ store, show }) {
     process(notifications) {
       const ids = loadIds();
       const seen = new Set(ids);
+      const scope = String(namespace() ?? 'default');
 
       for (const notification of Array.isArray(notifications) ? notifications : []) {
         if (notification?.read || !NATIVE_TYPES.has(notification?.type) || !validId(notification?.id)) continue;
-        const key = String(notification.id);
+        const key = JSON.stringify([scope, String(notification.id)]);
         if (seen.has(key)) continue;
 
         try {

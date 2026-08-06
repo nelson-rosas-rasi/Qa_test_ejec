@@ -69,6 +69,10 @@ function registerIpc(getWindow) {
   const newServerClient = () => createServerClient({ baseUrl: serverUrl() });
   const nativeNotifications = createNativeNotificationService({
     store,
+    namespace: () => JSON.stringify([
+      String(serverUrl()).replace(/\/+$/, ''),
+      store.getSetting('serverSession')?.user?.username || 'anonymous',
+    ]),
     show: ({ title, body, targetDate }) => {
       if (!Notification.isSupported()) return;
       const native = new Notification({ title, body });

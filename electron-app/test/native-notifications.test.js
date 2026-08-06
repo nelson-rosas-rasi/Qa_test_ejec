@@ -45,6 +45,38 @@ test('la deduplicación sobrevive al reinicio del servicio', () => {
   assert.deepEqual(afterRestart.map(n => n.id), ['n-2']);
 });
 
+test('aísla la deduplicación por servidor y usuario incluso después de reiniciar', () => {
+  const store = fakeStore();
+  let identity = 'https://backend-a|qa-uno';
+  const shown = [];
+  const notification = { id: 7, type: 'EXECUTION_ASSIGNED', title: 'Asignada', message: 'M', read: false };
+  const service = createNativeNotificationService({
+    store,
+    show: n => shown.push(`${identity}:${n.id}`),
+    namespace: () => identity,
+  });
+
+  service.process([notification]);
+  identity = 'https://backend-a|qa-dos';
+  service.process([notification]);
+  identity = 'https://backend-b|qa-uno';
+  service.process([notification]);
+  service.process([notification]);
+
+  identity = 'https://backend-a|qa-uno';
+  createNativeNotificationService({
+    store,
+    show: n => shown.push(`reinicio:${n.id}`),
+    namespace: () => identity,
+  }).process([notification]);
+
+  assert.deepEqual(shown, [
+    'https://backend-a|qa-uno:7',
+    'https://backend-a|qa-dos:7',
+    'https://backend-b|qa-uno:7',
+  ]);
+});
+
 test('las notificaciones leídas no generan avisos nativos', () => {
   const shown = [];
   createNativeNotificationService({ store: fakeStore(), show: n => shown.push(n) }).process([
