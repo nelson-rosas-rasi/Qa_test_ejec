@@ -81,6 +81,7 @@ contextBridge.exposeInMainWorld('qa', {
   listNotifications: (options) => ipcRenderer.invoke('notifications:list', options),
   markNotificationRead: (id) => ipcRenderer.invoke('notifications:read', id),
   markAllNotificationsRead: () => ipcRenderer.invoke('notifications:readAll'),
+  onOpenAssignmentDate: (callback) => ipcRenderer.on('assignments:openDate', (_event, targetDate) => callback(targetDate)),
   getServerUrl: () => ipcRenderer.invoke('config:getServerUrl'),
   setServerUrl: (url) => ipcRenderer.invoke('config:setServerUrl', url),
   discardResult: (runId) => ipcRenderer.invoke('results:discard', runId),

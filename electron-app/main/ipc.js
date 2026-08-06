@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { app, ipcMain, dialog, safeStorage, shell } = require('electron');
+const { app, ipcMain, dialog, safeStorage, shell, Notification } = require('electron');
 
 const { appError } = require('./errors');
 const { createConfigStore } = require('./config-store');
@@ -27,6 +27,7 @@ const { createServerSession } = require('./server/session');
 const { createServerClient } = require('./server/client');
 const { createOutbox } = require('./server/queue');
 const { createSender } = require('./server/sender');
+const { createNativeNotificationService } = require('./server/native-notifications');
 const { createAccountStore } = require('./github/account');
 const { createGitAuth } = require('./github/git-auth');
 const { requestDeviceCode, pollForToken } = require('./github/device-flow');
@@ -66,6 +67,20 @@ function registerIpc(getWindow) {
   const serverUrl = () => store.getSetting('serverUrl') || DEFAULT_SERVER_URL;
   // Cliente fresco por uso: así un cambio de URL en Configuración se toma sin reiniciar.
   const newServerClient = () => createServerClient({ baseUrl: serverUrl() });
+  const nativeNotifications = createNativeNotificationService({
+    store,
+    show: ({ title, body, targetDate }) => {
+      if (!Notification.isSupported()) return;
+      const native = new Notification({ title, body });
+      native.on('click', () => {
+        const win = getWindow();
+        win?.show();
+        win?.focus();
+        win?.webContents.send('assignments:openDate', targetDate);
+      });
+      native.show();
+    },
+  });
   async function withSession(action) {
     const session = serverSession.load();
     if (!session || serverSession.isExpired(session.token)) {
@@ -273,8 +288,12 @@ function registerIpc(getWindow) {
 
   ipcMain.handle('assignments:list', (_event, range) => withSession(
     token => newServerClient().listOccurrences(token, range)));
-  ipcMain.handle('notifications:list', (_event, options) => withSession(
-    token => newServerClient().listNotifications(token, options)));
+  ipcMain.handle('notifications:list', async (_event, options) => {
+    const result = await withSession(
+      token => newServerClient().listNotifications(token, options));
+    if (result.ok) nativeNotifications.process(result.data);
+    return result;
+  });
   ipcMain.handle('notifications:read', (_event, id) => withSession(
     token => newServerClient().markNotificationRead(token, id)));
   ipcMain.handle('notifications:readAll', () => withSession(
