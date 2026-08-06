@@ -1,0 +1,15 @@
+{
+  "git": {
+    "version": "2.55.0",
+    "url": "https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.3/Git-2.55.0.3-64-bit.exe",
+    "sha256": "af12577d0fdff74243a5988197aa49b957d5044edc17004f6ddf0768996f1dca"
+  },
+  "node": {
+    "version": "22.23.2",
+    "url": "https://nodejs.org/dist/v22.23.2/node-v22.23.2-x64.msi",
+    "sha256": "ce9572ae220c345fbae2340bbb4d084e8ca5e0fe093ee7067d43094ae23be989"
+  },
+  "playwright": {
+    "version": "1.58.2"
+  }
+}

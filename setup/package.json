@@ -1,0 +1,35 @@
+{
+  "name": "runqa-setup",
+  "version": "1.0.0",
+  "description": "Prepara el equipo para RunQA: git, Node y los navegadores de prueba.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.tuempresa.runqasetup",
+    "productName": "RunQA Setup",
+    "win": {
+      "target": "portable",
+      "icon": "renderer/assets/runqa-icon.ico",
+      "requestedExecutionLevel": "requireAdministrator"
+    },
+    "portable": {
+      "artifactName": "RunQA Setup ${version}.${ext}"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "main/**/*",
+      "renderer/**/*",
+      "prerequisites.json"
+    ]
+  }
+}
