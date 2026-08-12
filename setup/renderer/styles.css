@@ -1,0 +1,40 @@
+:root {
+  --fondo: #0f1420;
+  --panel: #161d2c;
+  --texto: #e6ebf5;
+  --tenue: #8b96ab;
+  --accent: #3b82f6;
+  --ok: #22c55e;
+  --error: #ef4444;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 32px;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: var(--fondo); color: var(--texto);
+}
+h1 { font-size: 22px; margin: 0 0 8px; }
+.intro { color: var(--tenue); font-size: 14px; margin: 0 0 24px; line-height: 1.5; }
+ul { list-style: none; padding: 0; margin: 0 0 20px; }
+li {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px; margin-bottom: 8px;
+  background: var(--panel); border-radius: 10px;
+}
+.marca { width: 20px; text-align: center; color: var(--tenue); }
+li[data-status="done"] .marca { color: var(--ok); }
+li[data-status="error"] .marca { color: var(--error); }
+li[data-status="running"] .marca { color: var(--accent); }
+.etiqueta { flex: 1; font-size: 14px; }
+.barra { width: 90px; height: 4px; background: #24304a; border-radius: 2px; overflow: hidden; }
+.barra span { display: block; height: 100%; background: var(--accent); width: 0; }
+/* pre-line: los errores de instalador traen la ruta del registro en su propia
+   línea y el QA tiene que poder leerla para mandárnosla. */
+.error { color: var(--error); font-size: 13px; margin: 0 0 16px; white-space: pre-line; }
+.acciones { display: flex; gap: 12px; }
+button {
+  padding: 10px 20px; border: 0; border-radius: 8px;
+  background: var(--accent); color: #fff; font-size: 14px; cursor: pointer;
+}
+button.secundario { background: transparent; color: var(--tenue); }
+button:disabled { opacity: .5; cursor: default; }
