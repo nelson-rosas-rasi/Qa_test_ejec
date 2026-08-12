@@ -7,6 +7,7 @@ const path = require('node:path');
  */
 const programFiles = (env) => env.ProgramFiles || 'C:\\Program Files';
 const localAppData = (env) => env.LOCALAPPDATA || path.join('C:\\Users', 'Default', 'AppData', 'Local');
+const systemRoot = (env) => env.SystemRoot || 'C:\\Windows';
 
 function binaryPaths(env = process.env) {
   const base = programFiles(env);
@@ -16,6 +17,7 @@ function binaryPaths(env = process.env) {
     node: path.join(nodeDir, 'node.exe'),
     npm: path.join(nodeDir, 'npm.cmd'),
     npx: path.join(nodeDir, 'npx.cmd'),
+    msiexec: path.join(systemRoot(env), 'System32', 'msiexec.exe'),
   };
 }
 

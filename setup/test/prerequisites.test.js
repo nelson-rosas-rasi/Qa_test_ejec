@@ -1,6 +1,24 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const prerequisites = require('../prerequisites.json');
+const { compareVersions } = require('../main/detect');
+
+/**
+ * Si el mínimo exigido quedara por encima de la versión que el setup instala,
+ * el paso se instalaría y la verificación posterior lo seguiría dando por
+ * faltante: un bucle en el que el QA reintenta para siempre. La única forma de
+ * que eso no pase es que el mínimo nunca supere a lo que se descarga.
+ */
+test('el mínimo exigido nunca supera a la versión que el setup instala', () => {
+  for (const key of ['git', 'node']) {
+    const { version, minVersion } = prerequisites[key];
+    assert.match(minVersion, /^\d+\.\d+\.\d+$/, `${key}: minVersion con formato x.y.z`);
+    assert.ok(
+      compareVersions(minVersion, version) <= 0,
+      `${key}: el mínimo (${minVersion}) supera a la versión que se instala (${version})`,
+    );
+  }
+});
 
 test('cada prerequisito descargable tiene versión, url https y sha256', () => {
   for (const key of ['git', 'node']) {
