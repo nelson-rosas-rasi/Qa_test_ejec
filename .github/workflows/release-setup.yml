@@ -1,0 +1,57 @@
+name: Publicar RunQA Setup
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'setup-v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: setup
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Instalar dependencias
+        # ci y no install: respeta package-lock.json en vez de resolver de nuevo,
+        # que es la misma exigencia que RunQA le hace a los repos de pruebas.
+        run: npm ci
+
+      # Antes de construir: el .exe se arma igual con módulos faltantes y el
+      # fallo aparece recién cuando un QA lo abre. Ver scripts/check-package.js.
+      - name: Verificar que el paquete está completo
+        run: npm run check-package
+
+      - name: Validar versión de la etiqueta
+        if: github.event_name == 'push'
+        shell: pwsh
+        run: |
+          $packageVersion = node -p "require('./package.json').version"
+          if ("setup-v$packageVersion" -ne "${{ github.ref_name }}") {
+            throw "La etiqueta ${{ github.ref_name }} no coincide con package.json v$packageVersion"
+          }
+
+      - name: Ejecutar pruebas
+        run: npm test
+
+      - name: Construir el ejecutable
+        run: npm run dist
+
+      - name: Publicar en el release de la etiqueta
+        if: github.event_name == 'push'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${{ github.ref_name }}" (Get-Item "dist/RunQA Setup *.exe").FullName --title "RunQA Setup $("${{ github.ref_name }}" -replace 'setup-v','')" --notes "Prepara el equipo e instala RunQA."
