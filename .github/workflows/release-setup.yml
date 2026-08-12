@@ -54,4 +54,8 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "${{ github.ref_name }}" (Get-Item "dist/RunQA Setup *.exe").FullName --title "RunQA Setup $("${{ github.ref_name }}" -replace 'setup-v','')" --notes "Prepara el equipo e instala RunQA."
+        # --prerelease a propósito: RunQA y su Setup se publican en el mismo
+        # repo, y el endpoint /releases/latest devuelve el más nuevo sin mirar
+        # de qué es. Sin esta marca, publicar el Setup deja a los equipos sin
+        # poder instalar RunQA. Lo excluye de "latest" sin esconderlo.
+        run: gh release create "${{ github.ref_name }}" (Get-Item "dist/RunQA Setup *.exe").FullName --title "RunQA Setup $("${{ github.ref_name }}" -replace 'setup-v','')" --notes "Prepara el equipo e instala RunQA." --prerelease

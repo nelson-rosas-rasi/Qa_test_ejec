@@ -1,6 +1,6 @@
 {
   "name": "runqa-setup",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Prepara el equipo para RunQA: git, Node y los navegadores de prueba.",
   "main": "main.js",
   "scripts": {
