@@ -52,7 +52,8 @@ reemplaza `1.6.0` en el ejemplo por la versión que haya generado el comando.
 También es posible publicar manualmente desde un equipo Windows con
 `GH_TOKEN=<token-con-permiso> npm run release -- --win`.
 
-La release debe contener el instalador, su `.blockmap` y `latest.yml`. Las
+La release debe contener el instalador, el paquete `runqa-<versión>-x64.nsis.7z`
+y `latest.yml`. Las
 instalaciones existentes consultan ese último archivo al abrir y cada hora,
 descargan una versión superior en segundo plano y ofrecen reiniciar para
 aplicarla.
@@ -77,6 +78,13 @@ La instalación crea `Uninstall RunQA.exe` dentro de la carpeta seleccionada y
 también registra RunQA en la sección de aplicaciones instaladas de Windows. Las
 actualizaciones posteriores conservan la ruta elegida y se descargan en segundo
 plano desde GitHub Releases.
+
+### Antes del instalador: RunQA Setup
+
+En un equipo nuevo, el QA no descarga este instalador directamente sino
+`RunQA Setup`, que deja el equipo listo (herramienta para traer proyectos, motor
+de dependencias y navegadores de prueba) y al terminar ejecuta este mismo
+instalador. Ver [../setup/README.md](../setup/README.md).
 
 ## Cuenta de GitHub
 

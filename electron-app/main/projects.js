@@ -3,6 +3,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { appError } = require('./errors');
+const { resolveCommand } = require('./runtime/windows-paths');
+const { checkBrowsers } = require('./playwright/browsers');
 
 function runFile(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -74,7 +76,21 @@ const NO_AUTH = { args: () => [], env: () => ({}) };
  */
 const needsShell = (command) => /\.(cmd|bat)$/i.test(command);
 
-function createProjectManager({ projectsDir, gitPath = 'git', npmPath = process.platform === 'win32' ? 'npm.cmd' : 'npm', run = runFile, auth = NO_AUTH }) {
+/**
+ * Con `shell: true`, Node arma la línea de comando uniendo [comando, ...args]
+ * con espacios y sin encomillar el ejecutable: una ruta como
+ * "C:\Program Files\nodejs\npm.cmd" —justo donde deja npm RunQA Setup— hace que
+ * cmd.exe corte en el espacio y no encuentre nada. Encomillarla alcanza.
+ */
+const quoteForShell = (command) => (command.includes(' ') ? `"${command}"` : command);
+
+function createProjectManager({
+  projectsDir,
+  gitPath = resolveCommand('git'),
+  npmPath = resolveCommand(process.platform === 'win32' ? 'npm.cmd' : 'npm'),
+  run = runFile,
+  auth = NO_AUTH,
+}) {
   const git = (args, cwd) => run(gitPath, [...auth.args(), ...args], {
     ...(cwd ? { cwd } : {}),
     env: { ...process.env, ...auth.env() },
@@ -85,10 +101,27 @@ function createProjectManager({ projectsDir, gitPath = 'git', npmPath = process.
     if (!currentHash) throw appError('LOCKFILE_NOT_FOUND', 'El proyecto necesita un package-lock.json para instalar dependencias de forma reproducible.');
     const playwrightCli = path.join(repoPath, 'node_modules', 'playwright', 'cli.js');
     if (currentHash !== previousHash || !fs.existsSync(playwrightCli)) {
-      try { await run(npmPath, ['ci', '--no-audit', '--no-fund'], { cwd: repoPath, shell: needsShell(npmPath) }); }
+      const shell = needsShell(npmPath);
+      try { await run(shell ? quoteForShell(npmPath) : npmPath, ['ci', '--no-audit', '--no-fund'], { cwd: repoPath, shell }); }
       catch (err) { throw friendlyCommandError('DEPENDENCIES_FAILED', 'No fue posible instalar las dependencias del proyecto.', err); }
     }
     if (!fs.existsSync(playwrightCli)) throw appError('PLAYWRIGHT_NOT_INSTALLED', 'El proyecto no incluye Playwright entre sus dependencias.');
+    const navegadores = checkBrowsers({ repoPath });
+    // Faltar y estar desalineados se arreglan distinto: lo primero es correr el
+    // Setup con la cuenta correcta, lo segundo es alinear la versión. Un mensaje
+    // único para los dos manda al QA a repetir lo que ya hizo.
+    if (!navegadores.ok && navegadores.reason === 'missing') {
+      throw appError(
+        'BROWSERS_NOT_INSTALLED',
+        'No hay navegadores de Playwright instalados para tu cuenta de Windows. Abrí RunQA Setup con tu propia cuenta de administrador para instalarlos.',
+      );
+    }
+    if (!navegadores.ok) {
+      throw appError(
+        'BROWSERS_VERSION_MISMATCH',
+        `Este proyecto necesita los navegadores de Playwright ${navegadores.expected} y están instalados los ${navegadores.installed}. Abrí RunQA Setup y ejecutalo de nuevo para alinearlos.`,
+      );
+    }
     return currentHash;
   }
 

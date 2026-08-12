@@ -250,6 +250,39 @@ test('npm.cmd se invoca con shell: Node >=20.12 se niega a ejecutar .cmd sin él
   assert.equal(npmCall.options.shell, true);
 });
 
+test('un npm con espacios en la ruta llega encomillado al shell', async () => {
+  const projectsDir = temp();
+  const sourcePath = temp();
+  fs.mkdirSync(path.join(sourcePath, '.git'));
+  const calls = [];
+  const run = async (command, args, options = {}) => {
+    calls.push({ command, args, options });
+    if (args.includes('remote') && args.includes('get-url')) return { stdout: 'https://example.test/qa.git\n', stderr: '' };
+    if (args.includes('ls-remote')) return { stdout: 'ref: refs/heads/main\tHEAD\nabc\tHEAD\n', stderr: '' };
+    if (args.includes('clone')) {
+      const destination = args.at(-1);
+      fs.mkdirSync(destination, { recursive: true });
+      fs.writeFileSync(path.join(destination, 'package.json'), '{}');
+      fs.writeFileSync(path.join(destination, 'package-lock.json'), '{"lockfileVersion":3}');
+      return { stdout: '', stderr: '' };
+    }
+    if (args[0] === 'ci') {
+      fs.mkdirSync(path.join(options.cwd, 'node_modules', 'playwright'), { recursive: true });
+      fs.writeFileSync(path.join(options.cwd, 'node_modules', 'playwright', 'cli.js'), '');
+      return { stdout: '', stderr: '' };
+    }
+    if (args.includes('rev-parse')) return { stdout: 'abc123\n', stderr: '' };
+    return { stdout: '', stderr: '' };
+  };
+  // Es la ruta real donde queda npm tras RunQA Setup: sin comillas, cmd.exe
+  // corta en el espacio de "Program Files".
+  const npmPath = 'C:\\Program Files\\nodejs\\npm.cmd';
+  await createProjectManager({ projectsDir, run, npmPath }).importExisting({ id: 'local', sourcePath });
+  const npmCall = calls.find((call) => call.args[0] === 'ci');
+  assert.equal(npmCall.command, `"${npmPath}"`);
+  assert.equal(npmCall.options.shell, true);
+});
+
 test('un ejecutable de verdad no se invoca con shell', async () => {
   const projectsDir = temp();
   const sourcePath = temp();
@@ -305,4 +338,99 @@ test('remove sin repoPath lanza PROJECT_NOT_INITIALIZED', () => {
     () => createProjectManager({ projectsDir, run: async () => ({ stdout: '', stderr: '' }) }).remove({}),
     (err) => err.code === 'PROJECT_NOT_INITIALIZED',
   );
+});
+
+/** Deja en disco un repo ya clonado, con Playwright instalado, listo para `prepare`. */
+function repoYaClonado(projectsDir, version) {
+  const repoPath = path.join(projectsDir, 'erp');
+  fs.mkdirSync(path.join(repoPath, '.git'), { recursive: true });
+  fs.mkdirSync(path.join(repoPath, 'node_modules', 'playwright'), { recursive: true });
+  fs.writeFileSync(path.join(repoPath, 'node_modules', 'playwright', 'cli.js'), '');
+  fs.mkdirSync(path.join(repoPath, 'node_modules', 'playwright-core'), { recursive: true });
+  fs.writeFileSync(path.join(repoPath, 'node_modules', 'playwright-core', 'package.json'), `{"version":"${version}"}`);
+  fs.writeFileSync(path.join(repoPath, 'package-lock.json'), '{"lockfileVersion":3}');
+  const dependencyLockHash = crypto.createHash('sha256')
+    .update(fs.readFileSync(path.join(repoPath, 'package-lock.json'))).digest('hex');
+  return { repoPath, dependencyLockHash };
+}
+
+const gitFalso = async (command, args) => {
+  if (args[0] === 'ls-remote') return { stdout: 'ref: refs/heads/main\tHEAD\nabc\tHEAD\n', stderr: '' };
+  if (args[0] === 'remote') return { stdout: 'https://example.test/qa.git\n', stderr: '' };
+  if (args[0] === 'rev-parse') return { stdout: 'abc123\n', stderr: '' };
+  return { stdout: '', stderr: '' };
+};
+
+/**
+ * Corre con una caché de navegadores de mentira, para no depender del perfil real.
+ *
+ * `LOCALAPPDATA` sola no alcanza: `browsers.js` sólo la mira en `win32`, así que
+ * en el Linux de desarrollo estos tests leían el `~/.cache/ms-playwright` de
+ * verdad y pasaban o fallaban según lo que tuviera puesto la máquina.
+ * `PLAYWRIGHT_BROWSERS_PATH` manda en las tres plataformas, que es lo que hace
+ * al fixture independiente del sistema operativo. `LOCALAPPDATA` se sigue
+ * moviendo porque los tests escriben el marcador con esa ruta.
+ */
+async function conPerfil(navegadores, accion) {
+  const previo = { local: process.env.LOCALAPPDATA, browsers: process.env.PLAYWRIGHT_BROWSERS_PATH };
+  const perfil = temp();
+  const cache = path.join(perfil, 'ms-playwright');
+  fs.mkdirSync(cache, { recursive: true });
+  for (const nombre of navegadores) fs.mkdirSync(path.join(cache, nombre), { recursive: true });
+  process.env.LOCALAPPDATA = perfil;
+  process.env.PLAYWRIGHT_BROWSERS_PATH = cache;
+  try { return await accion(); }
+  finally {
+    for (const [clave, valor] of [['LOCALAPPDATA', previo.local], ['PLAYWRIGHT_BROWSERS_PATH', previo.browsers]]) {
+      if (valor === undefined) delete process.env[clave];
+      else process.env[clave] = valor;
+    }
+  }
+}
+
+test('avisa cuando los navegadores instalados no sirven para el proyecto', async () => {
+  const projectsDir = temp();
+  const { repoPath, dependencyLockHash } = repoYaClonado(projectsDir, '1.49.0');
+
+  await conPerfil(['chromium-1208'], async () => {
+    fs.writeFileSync(
+      path.join(process.env.LOCALAPPDATA, 'ms-playwright', '.runqa-setup.json'),
+      '{"playwrightVersion":"1.58.2"}',
+    );
+    const manager = createProjectManager({ projectsDir, run: gitFalso });
+    await assert.rejects(
+      () => manager.prepare({ repoPath, repoUrl: 'https://example.test/qa.git', defaultBranch: 'main', dependencyLockHash }),
+      (err) => err.code === 'BROWSERS_VERSION_MISMATCH',
+    );
+  });
+});
+
+/**
+ * El caso que rompió un equipo en producción: los navegadores estaban, pero el
+ * marcador no (el Setup nunca llegó a ese paso). El proyecto ya clonado dejó de
+ * abrir. Sin marcador no hay versión que comparar, y eso no es motivo para
+ * bloquear.
+ */
+test('un proyecto ya clonado abre con los navegadores puestos aunque falte el marcador', async () => {
+  const projectsDir = temp();
+  const { repoPath, dependencyLockHash } = repoYaClonado(projectsDir, '1.49.0');
+
+  await conPerfil(['chromium-1208', 'firefox-1489', 'webkit-2140'], async () => {
+    const manager = createProjectManager({ projectsDir, run: gitFalso });
+    const proyecto = await manager.prepare({ repoPath, repoUrl: 'https://example.test/qa.git', defaultBranch: 'main', dependencyLockHash });
+    assert.equal(proyecto.commit, 'abc123');
+  });
+});
+
+test('sin ningún navegador en el perfil dice que faltan, no que están desalineados', async () => {
+  const projectsDir = temp();
+  const { repoPath, dependencyLockHash } = repoYaClonado(projectsDir, '1.49.0');
+
+  await conPerfil([], async () => {
+    const manager = createProjectManager({ projectsDir, run: gitFalso });
+    await assert.rejects(
+      () => manager.prepare({ repoPath, repoUrl: 'https://example.test/qa.git', defaultBranch: 'main', dependencyLockHash }),
+      (err) => err.code === 'BROWSERS_NOT_INSTALLED' && /cuenta/i.test(err.message),
+    );
+  });
 });
