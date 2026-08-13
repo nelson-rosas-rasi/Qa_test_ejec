@@ -133,3 +133,23 @@ test('RunQA se descarga del último release y se ejecuta', async () => {
   assert.ok(llamadas[0].cmd.endsWith('RunQA-Installer-1.6.0.exe'));
   assert.deepEqual(llamadas[0].args, []);
 });
+
+test('runFile entrega la salida del proceso a medida que sale', async () => {
+  const lineas = [];
+  await runFile(process.execPath, ['-e', 'console.log("bajando 12%"); console.error("aviso"); console.log("listo")'], {
+    onOutput: (linea) => lineas.push(linea),
+  });
+  assert.ok(lineas.includes('bajando 12%'), `no llegó la primera línea: ${JSON.stringify(lineas)}`);
+  assert.ok(lineas.includes('listo'));
+  assert.ok(lineas.includes('aviso'), 'lo que va a stderr también se muestra');
+});
+
+test('runFile conserva el código de salida en el error, que es todo lo que dejan los instaladores', async () => {
+  // Con 23 y no con 1603: en Linux los códigos son de 8 bits y 1603 llega como
+  // 67. En Windows llegan enteros, que es donde importa (1603, 3010, 1641), y
+  // por eso el código se pasa tal cual sin interpretarlo.
+  await assert.rejects(
+    () => runFile(process.execPath, ['-e', 'process.exit(23)'], { onOutput: () => {} }),
+    (err) => err.exitCode === 23 && /23/.test(err.message),
+  );
+});

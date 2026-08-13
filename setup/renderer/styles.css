@@ -45,3 +45,24 @@ button.secundario.destacado {
   background: rgba(59, 130, 246, .12);
 }
 button:disabled { opacity: .5; cursor: default; }
+
+/* La salida real de cada instalador. Antes sólo había una barra que iba de 0 a
+   100 sin nada en el medio: con `playwright install` bajando cientos de megas,
+   la pantalla parecía colgada y no había forma de saber dónde estaba el error. */
+#salida {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  max-height: 168px;
+  overflow-y: auto;
+  background: #0b0f18;
+  border: 1px solid #232c3f;
+  border-radius: 8px;
+  color: var(--tenue);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+li[data-status="skipped"] .etiqueta { text-decoration: line-through; opacity: .6; }
+li .saltar { margin-left: auto; }

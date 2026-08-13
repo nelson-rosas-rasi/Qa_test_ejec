@@ -78,6 +78,9 @@ function guionManual({ steps = [], temp, prerequisites, releasesUrl }) {
   }
 
   lineas.push(`cd /d "${temp}"`);
+  // Deja un prompt abierto: sin esto la ventana se cierra apenas termina de
+  // imprimir y el QA no alcanza a leer ni a copiar nada.
+  lineas.push('cmd /K');
   return lineas.join('\r\n') + '\r\n';
 }
 

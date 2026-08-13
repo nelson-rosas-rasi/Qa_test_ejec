@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { execFile } = require('node:child_process');
+const { spawn } = require('node:child_process');
 const { binaryPaths, browsersDir, markerPath } = require('../paths');
 const { downloadTo } = require('../download');
 const { latestInstaller } = require('../releases');
@@ -12,23 +12,50 @@ const REPO = 'Qa_test_ejec';
  *  msiexec instaló bien y sólo pide reinicio. */
 const MSI_OK_REINICIO = [3010, 1641];
 
+/**
+ * `spawn` y no `execFile`: execFile acumula toda la salida y no entrega nada
+ * hasta que el proceso termina. `playwright install` baja cientos de megas, así
+ * que la pantalla quedaba muda varios minutos y era imposible distinguir un
+ * paso lento de uno colgado. Ahora cada línea sale en el momento.
+ */
 function runFile(command, args, opts = {}) {
+  const { onOutput = () => {}, ...resto } = opts;
   return new Promise((resolve, reject) => {
-    execFile(command, args, { windowsHide: true, maxBuffer: 32 * 1024 * 1024, ...opts }, (err, stdout, stderr) => {
-      if (err) {
-        err.stdout = stdout;
-        err.stderr = stderr;
-        // El mensaje de execFile es "Command failed: <comando>" y NO incluye el
-        // código de salida. Los instaladores de Windows no escriben nada en
-        // stderr: el código es todo lo que dejan (1603, 1618, 1619...), así que
-        // sin él un fallo es indiagnosticable. `err.code` es numérico cuando el
-        // proceso corrió y salió mal, y una cadena (ENOENT) si no arrancó.
-        if (typeof err.code === 'number') {
-          err.exitCode = err.code;
-          err.message = err.message.replace('Command failed:', `Command failed (código ${err.code}):`);
-        }
-        reject(err);
-      } else resolve({ stdout, stderr });
+    let stdout = '';
+    let stderr = '';
+    let resto_linea = '';
+
+    const emitirLineas = (texto) => {
+      const partes = (resto_linea + texto).split(/\r?\n/);
+      resto_linea = partes.pop();
+      // \r sin \n: las barras de progreso reescriben la misma línea.
+      for (const linea of partes) onOutput(linea.split('\r').pop());
+    };
+
+    let hijo;
+    try {
+      hijo = spawn(command, args, { windowsHide: true, ...resto });
+    } catch (err) {
+      reject(err);
+      return;
+    }
+
+    hijo.stdout?.on('data', (dato) => { stdout += dato; emitirLineas(String(dato)); });
+    hijo.stderr?.on('data', (dato) => { stderr += dato; emitirLineas(String(dato)); });
+
+    hijo.on('error', (err) => reject(err));
+    hijo.on('close', (code) => {
+      if (resto_linea) onOutput(resto_linea.split('\r').pop());
+      if (code === 0) { resolve({ stdout, stderr }); return; }
+      // Los instaladores de Windows no escriben nada en stderr: el código de
+      // salida es todo lo que dejan (1603, 1618, 1619...), así que tiene que
+      // viajar en el mensaje o el fallo queda indiagnosticable.
+      const err = new Error(`Command failed (código ${code}): ${command} ${args.join(' ')}`);
+      err.exitCode = code;
+      err.code = code;
+      err.stdout = stdout;
+      err.stderr = stderr;
+      reject(err);
     });
   });
 }
@@ -57,21 +84,25 @@ function buildInstallers({
   const destino = (url) => path.win32.join(temp, url.split('/').pop());
 
   return {
-    async git({ onProgress }) {
+    async git({ onProgress, onOutput = () => {}, signal }) {
+      onOutput('Descargando el instalador de git...');
       const archivo = await download({ url: prerequisites.git.url, dest: destino(prerequisites.git.url), sha256: prerequisites.git.sha256, onProgress });
+      onOutput(`Instalando ${archivo}`);
       // Instalador Inno Setup: silencioso, sin reinicio y sin botón de cancelar.
-      await run(archivo, ['/VERYSILENT', '/NORESTART', '/NOCANCEL', '/SP-']);
+      await run(archivo, ['/VERYSILENT', '/NORESTART', '/NOCANCEL', '/SP-'], { onOutput, signal });
     },
 
-    async node({ onProgress }) {
+    async node({ onProgress, onOutput = () => {}, signal }) {
+      onOutput('Descargando el instalador de Node...');
       const archivo = await download({ url: prerequisites.node.url, dest: destino(prerequisites.node.url), sha256: prerequisites.node.sha256, onProgress });
+      onOutput(`Instalando ${archivo}`);
       // /l*v: msiexec es la única fuente que explica POR QUÉ falló. Sin esto
       // sólo queda el código de salida, que dice qué pasó pero no dónde.
       // El "+" agrega en vez de sobrescribir: si el QA reintenta, el registro
       // del primer intento tiene que sobrevivir para poder comparar los dos.
       const registro = path.win32.join(temp, 'node-msi.log');
       try {
-        await run(paths.msiexec, ['/i', archivo, '/qn', '/norestart', '/l*v+', registro]);
+        await run(paths.msiexec, ['/i', archivo, '/qn', '/norestart', '/l*v+', registro], { onOutput, signal });
       } catch (err) {
         // Para msiexec el éxito no es sólo 0: 3010 y 1641 quieren decir
         // "instalado, hace falta reiniciar". Darlos por fallo dejaría plantado
@@ -83,8 +114,9 @@ function buildInstallers({
       }
     },
 
-    async browsers({ onProgress }) {
+    async browsers({ onProgress, onOutput = () => {}, signal }) {
       onProgress(0);
+      onOutput('Descargando los navegadores de prueba. Son varios cientos de megas: puede tardar.');
       // npx es un .cmd y Node >=20.12 se niega a ejecutarlo sin shell. Los
       // argumentos son constantes (salen de prerequisites.json), así que
       // concatenarlos es seguro. Con shell:true, Node arma la línea de
@@ -99,15 +131,17 @@ function buildInstallers({
       // quien instaló Node antes de que el setup arrancara. Al revés no
       // funciona: recién instalado, el PATH de este proceso todavía es el viejo.
       const npx = exists(paths.npx) ? `"${paths.npx}"` : 'npx.cmd';
-      await run(npx, ['--yes', `playwright@${prerequisites.playwright.version}`, 'install'], { shell: true });
+      await run(npx, ['--yes', `playwright@${prerequisites.playwright.version}`, 'install'], { shell: true, onOutput, signal });
       marcar({ playwrightVersion: prerequisites.playwright.version });
       onProgress(100);
     },
 
-    async runqa({ onProgress }) {
+    async runqa({ onProgress, onOutput = () => {}, signal }) {
       const info = await latest({});
+      onOutput(`Descargando ${info.name}`);
       const archivo = await download({ url: info.url, dest: path.win32.join(temp, info.name), sha256: null, onProgress, verify: false });
-      await run(archivo, []);
+      onOutput('Abriendo el instalador de RunQA...');
+      await run(archivo, [], { onOutput, signal });
     },
   };
 }
