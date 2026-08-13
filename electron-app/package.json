@@ -1,6 +1,6 @@
 {
   "name": "runqa",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "RunQA — ejecuta pruebas Playwright, se actualiza solo y genera reportes Word vía n8n.",
   "main": "main.js",
   "scripts": {
