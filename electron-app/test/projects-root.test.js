@@ -22,12 +22,14 @@ test('las raíces conocidas incluyen la actual y las anteriores', () => {
   // Cambiar de carpeta no puede dejar huérfanos los proyectos ya creados: se
   // siguen administrando desde donde están.
   const roots = knownRoots({ configured: '/datos/qa', userData: USER_DATA, previos: ['/viejo/qa'] });
-  assert.deepEqual(roots, ['/datos/qa', POR_DEFECTO, '/viejo/qa']);
+  // Comparadas ya normalizadas: `knownRoots` resuelve las rutas para poder
+  // descartar duplicados, y en Windows resolver "/datos/qa" da "C:\datos\qa".
+  assert.deepEqual(roots, ['/datos/qa', POR_DEFECTO, '/viejo/qa'].map((r) => path.resolve(r)));
 });
 
 test('las raíces no se repiten aunque la elegida sea la de siempre', () => {
   const roots = knownRoots({ configured: POR_DEFECTO, userData: USER_DATA, previos: [POR_DEFECTO] });
-  assert.deepEqual(roots, [POR_DEFECTO]);
+  assert.deepEqual(roots, [path.resolve(POR_DEFECTO)]);
 });
 
 test('un repo bajo alguna raíz conocida está administrado', () => {
