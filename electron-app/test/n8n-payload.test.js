@@ -34,12 +34,13 @@ const valores = {
   ERP_VERSION: '3.6.7_05',
   BASE_URL: 'https://testing.rasi.net.co/etic/admin/index3.jsp',
   GOOGLE_TEMPLATE_DOC_ID: 'plantilla-123',
+  GOOGLE_DRIVE_FOLDER_ID: 'carpeta-456',
 };
 
 test('arma las nueve secciones que el flujo de n8n espera', () => {
   const p = buildReportPayload(unRegistro(), valores);
   assert.deepEqual(Object.keys(p), [
-    'templateDocId', 'informacionGeneral', 'resumen', 'resultadosPorModulo',
+    'templateDocId', 'driveFolderId', 'informacionGeneral', 'resumen', 'resultadosPorModulo',
     'detalleTests', 'testsFallidos', 'testsFlaky', 'observaciones',
     'accionesSeguimiento', 'firma',
   ]);
@@ -61,6 +62,10 @@ test('informacionGeneral sale del perfil y del registro', () => {
 
 test('la plantilla de Drive viaja como templateDocId', () => {
   assert.equal(buildReportPayload(unRegistro(), valores).templateDocId, 'plantilla-123');
+});
+
+test('la carpeta de Drive viaja como driveFolderId', () => {
+  assert.equal(buildReportPayload(unRegistro(), valores).driveFolderId, 'carpeta-456');
 });
 
 test('la firma toma nombre y cargo del perfil', () => {
@@ -85,6 +90,7 @@ test('sin QA_NOMBRE usa el nombre del perfil que ya trae el registro', () => {
 test('un perfil vacío no rompe: las claves quedan en blanco, no en undefined', () => {
   const p = buildReportPayload(unRegistro({ profileName: null }), {});
   assert.equal(p.templateDocId, '');
+  assert.equal(p.driveFolderId, '');
   assert.equal(p.informacionGeneral.urlServidor, '');
   assert.equal(p.informacionGeneral.versionERP, '');
   assert.equal(p.informacionGeneral.ambiente, 'Produccion');

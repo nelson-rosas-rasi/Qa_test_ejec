@@ -20,28 +20,52 @@ function documentoDe(texto) {
   return (primero && primero.documentUrl) || null;
 }
 
+/**
+ * El cuerpo se guarda en el registro de la corrida y se le muestra al QA, así que
+ * una respuesta enorme (un stack de n8n, un HTML de error) no puede engordar el
+ * JSON sin límite.
+ */
+const TOPE_CUERPO = 2000;
+
+function recortar(texto) {
+  if (texto === null || texto === undefined) return null;
+  const s = String(texto);
+  return s.length <= TOPE_CUERPO ? s : `${s.slice(0, TOPE_CUERPO)}\n… (respuesta recortada)`;
+}
+
 async function notifyN8n(payload, { url, fetchImpl = fetch }) {
   const at = new Date().toISOString();
+  let status = null;
   try {
     const res = await fetchImpl(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) return { ok: false, at, docUrl: null, error: `El servicio respondió ${res.status}` };
+    status = res.status ?? null;
 
-    const docUrl = documentoDe(await res.text());
+    // El cuerpo se lee siempre, falle o no: es lo único que dice QUÉ salió mal
+    // cuando el flujo está mal configurado. Se recorta sólo para mostrarlo; el
+    // enlace se busca en el texto completo, o una respuesta larga pero buena
+    // quedaría marcada como fallida.
+    const crudo = await res.text();
+    const body = recortar(crudo);
+    if (!res.ok) return { ok: false, at, docUrl: null, status, body, error: `El servicio respondió ${res.status}` };
+
+    const docUrl = documentoDe(crudo);
     if (!docUrl) {
       return {
         ok: false,
         at,
         docUrl: null,
+        status,
+        body,
         error: 'El servicio recibió la corrida pero no generó el documento. Revisá las ejecuciones en n8n.',
       };
     }
-    return { ok: true, at, docUrl, error: null };
+    return { ok: true, at, docUrl, status, body, error: null };
   } catch (err) {
-    return { ok: false, at, docUrl: null, error: err.message || String(err) };
+    return { ok: false, at, docUrl: null, status, body: null, error: err.message || String(err) };
   }
 }
 

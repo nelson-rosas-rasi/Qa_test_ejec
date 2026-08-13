@@ -67,3 +67,53 @@ test('un cuerpo ilegible no rompe el envío', async () => {
   assert.equal(res.ok, false);
   assert.ok(res.error);
 });
+
+/* ---------- lo que se le muestra al QA para diagnosticar ---------- */
+
+test('devuelve el código y el cuerpo crudo cuando el envío sale bien', async () => {
+  const fetchImpl = async () => respuesta({ body: CUERPO_OK });
+  const res = await notifyN8n(payload, { url: 'https://n8n', fetchImpl });
+  assert.equal(res.status, 200);
+  assert.equal(res.body, CUERPO_OK);
+});
+
+test('devuelve el cuerpo crudo cuando n8n contesta 200 sin documento', async () => {
+  // Es EL caso a diagnosticar: el flujo está mal configurado y lo único que lo
+  // delata es lo que contestó el nodo que falló.
+  const crudo = JSON.stringify([{ status: 'error', message: 'plantilla no encontrada' }]);
+  const fetchImpl = async () => respuesta({ body: crudo });
+  const res = await notifyN8n(payload, { url: 'https://n8n', fetchImpl });
+  assert.equal(res.ok, false);
+  assert.equal(res.status, 200);
+  assert.equal(res.body, crudo);
+});
+
+test('un 500 trae su código y su cuerpo', async () => {
+  const fetchImpl = async () => respuesta({ ok: false, status: 500, body: 'Internal Server Error' });
+  const res = await notifyN8n(payload, { url: 'https://n8n', fetchImpl });
+  assert.equal(res.status, 500);
+  assert.equal(res.body, 'Internal Server Error');
+});
+
+test('un fallo de red no tiene código pero sí deja el error', async () => {
+  const fetchImpl = async () => { throw new Error('ECONNREFUSED'); };
+  const res = await notifyN8n(payload, { url: 'https://n8n', fetchImpl });
+  assert.equal(res.status, null);
+  assert.equal(res.body, null);
+  assert.match(res.error, /ECONNREFUSED/);
+});
+
+test('el cuerpo se recorta para no guardar una respuesta enorme en el registro', async () => {
+  const largo = 'x'.repeat(5000);
+  const fetchImpl = async () => respuesta({ body: largo });
+  const res = await notifyN8n(payload, { url: 'https://n8n', fetchImpl });
+  assert.ok(res.body.length < largo.length);
+  assert.ok(res.body.length <= 2100);
+  assert.match(res.body, /recortada/i);
+});
+
+test('un cuerpo ilegible deja el código de todos modos', async () => {
+  const fetchImpl = async () => ({ ok: true, status: 200, text: async () => { throw new Error('stream roto'); } });
+  const res = await notifyN8n(payload, { url: 'https://n8n', fetchImpl });
+  assert.equal(res.status, 200);
+});

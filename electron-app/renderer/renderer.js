@@ -1115,10 +1115,31 @@ function openProjectModal() {
 /** Campos cuyo valor se enmascara. Heurística genérica, no específica del repo. */
 const SECRET_KEY = /(PASSWORD|TOKEN|SECRET)/i;
 
-/** Claves que ya no se piden por perfil: se gestionan a nivel de proyecto
- *  (la URL de n8n es del proyecto, compartida por todos los perfiles). Debe
- *  coincidir con N8N_ENV_KEY de main/profiles/n8n-env.js. */
-const PROJECT_LEVEL_KEYS = new Set(['N8N_WEBHOOK_URL']);
+/** Claves que ya no se piden por perfil: se gestionan a nivel de proyecto, desde
+ *  el modal «Configurar n8n». Debe coincidir con N8N_KEYS de
+ *  main/profiles/n8n-env.js. QA_NOMBRE y QA_CARGO NO están acá: firman el
+ *  reporte, así que siguen siendo de cada perfil. */
+const PROJECT_LEVEL_KEYS = new Set([
+  'N8N_WEBHOOK_URL',
+  'GOOGLE_TEMPLATE_DOC_ID',
+  'GOOGLE_DRIVE_FOLDER_ID',
+  'AMBIENTE',
+  'ERP_VERSION',
+]);
+
+/** Etiqueta y ayuda de cada campo del modal de n8n, en el orden en que se muestran. */
+const N8N_CAMPOS = [
+  { key: 'N8N_WEBHOOK_URL', label: 'URL del webhook', placeholder: 'https://n8n.tu-servidor/webhook/qa-report',
+    help: 'A dónde RunQA envía la corrida. Sin esto no se genera documentación.' },
+  { key: 'GOOGLE_TEMPLATE_DOC_ID', label: 'ID de la plantilla de Google Docs', placeholder: '1McrR4uDzNp21crlCy8jw18mlc2nTBUNp',
+    help: 'El documento que el flujo duplica. Es el tramo largo de la URL, entre /d/ y /edit.' },
+  { key: 'GOOGLE_DRIVE_FOLDER_ID', label: 'ID de la carpeta de Drive', placeholder: '1E1GzO3eNz5KSlJc6LESc_BAiv7brLy_d',
+    help: 'Dónde queda el documento generado. Es el tramo final de la URL de la carpeta.' },
+  { key: 'AMBIENTE', label: 'Ambiente', placeholder: 'Produccion',
+    help: 'Aparece en la sección 1 del reporte.' },
+  { key: 'ERP_VERSION', label: 'Versión del ERP', placeholder: '3.6.7_05',
+    help: 'Aparece en la sección 1 del reporte.' },
+];
 
 async function openProfileModal(profileId = null) {
   const schema = await api.getProfileSchema(state.project);
@@ -1337,6 +1358,40 @@ function openAlert({ title, message, confirmText = 'Entendido' }) {
   document.getElementById('alert-ok').onclick = () => closeModal();
 }
 
+/**
+ * Aviso del envío a n8n. Sale SIEMPRE que se pide documentación, salga bien o
+ * mal: si sale bien confirma y da el enlace, y si sale mal muestra el código y
+ * el cuerpo con que contestó n8n, que es lo único que dice qué nodo del flujo
+ * está mal configurado.
+ */
+function openN8nAlert(n8n) {
+  const ok = !!(n8n && n8n.ok);
+  const crudo = [
+    n8n && n8n.status != null ? `HTTP ${n8n.status}` : 'sin respuesta del servidor',
+    n8n && n8n.body ? n8n.body : '(cuerpo vacío)',
+  ].join('\n\n');
+
+  $overlay.hidden = false;
+  $overlay.innerHTML = `<div class="modal" style="width:560px;max-height:82vh;display:flex;flex-direction:column">
+    <div class="modal-pad" style="overflow:auto">
+      <div class="modal-title">${ok ? 'Reporte enviado a n8n' : 'No se pudo generar la documentación'}</div>
+      <div class="modal-sub" style="margin-top:6px">${ok
+        ? 'n8n recibió la corrida y generó el documento.'
+        : escapeHtml((n8n && n8n.error) || 'n8n no confirmó la creación del documento.')}</div>
+      ${ok && n8n.docUrl ? `<div style="margin-top:12px"><a href="${escapeHtml(n8n.docUrl)}" target="_blank" rel="noreferrer" style="font-size:13px;word-break:break-all">${escapeHtml(n8n.docUrl)}</a></div>` : ''}
+      ${ok ? '' : '<div class="config-hint" style="margin-top:12px">Revisá el bloque de n8n en Configuración y las ejecuciones del flujo.</div>'}
+      <details style="margin-top:14px" ${ok ? '' : 'open'}>
+        <summary style="cursor:pointer;font-size:12px;font-weight:700">Respuesta de n8n</summary>
+        <pre style="margin-top:8px;padding:10px;background:#f7f9fc;border:1px solid #dbe3ef;border-radius:8px;font-size:11px;white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:auto">${escapeHtml(crudo)}</pre>
+      </details>
+    </div>
+    <div class="modal-actions" style="padding:14px 20px;border-top:1px solid #eef2f7">
+      <button class="btn btn-primary" id="alert-ok">Entendido</button>
+    </div>
+  </div>`;
+  document.getElementById('alert-ok').onclick = () => closeModal();
+}
+
 /** Ventana emergente de confirmación (Cancelar / acción). */
 function openConfirm({ title, message, confirmText = 'Confirmar', cancelText = 'Cancelar', danger = false, onConfirm }) {
   $overlay.hidden = false;
@@ -1512,10 +1567,15 @@ function renderSaveDecision() {
     // URL de n8n configurada, r.n8nSkipped es true: se avisa en el detalle.
     state.pendingSave = null;
     openResultDetail(r.record.id);
-    if (r.n8nSkipped) openAlert({
-      title: 'n8n no está configurado',
-      message: 'La corrida se guardó localmente. Configura la URL del webhook en Configuración para generar la documentación.',
-    });
+    if (r.n8nSkipped) {
+      openAlert({
+        title: 'n8n no está configurado',
+        message: 'La corrida se guardó localmente. Abre Configuración → Configurar n8n para generar la documentación.',
+      });
+      return;
+    }
+    // Salga bien o mal, se muestra qué contestó n8n.
+    openN8nAlert(r.record.n8n);
   };
 }
 
@@ -1745,17 +1805,23 @@ async function renderResultDetail() {
   if (resend) resend.onclick = async () => {
     resend.disabled = true; resend.textContent = 'Generando…';
     const res = await api.resendResultN8n(state.project, r.id);
-    if (!res.ok) {
+    if (res.code === 'N8N_NOT_CONFIGURED') {
       resend.disabled = false; resend.textContent = 'Guardar y generar documentación';
       openAlert({
-        title: res.code === 'N8N_NOT_CONFIGURED' ? 'n8n no está configurado' : 'No se pudo generar la documentación',
-        message: res.code === 'N8N_NOT_CONFIGURED'
-          ? 'Configura la URL del webhook en Configuración para generar la documentación.'
-          : (res.error || 'Ocurrió un error al enviar a n8n.'),
+        title: 'n8n no está configurado',
+        message: 'Abre Configuración → Configurar n8n para generar la documentación.',
       });
       return;
     }
+    if (!res.ok) {
+      resend.disabled = false; resend.textContent = 'Guardar y generar documentación';
+      // Sin `n8n` el fallo es de RunQA (p. ej. la corrida ya no está), no del flujo.
+      if (res.n8n) openN8nAlert(res.n8n);
+      else openAlert({ title: 'No se pudo generar la documentación', message: res.error || 'Ocurrió un error al enviar a n8n.' });
+      return;
+    }
     renderResults();
+    openN8nAlert(res.n8n);
   };
 }
 
@@ -1830,6 +1896,59 @@ async function renderResultsMetrics() {
   wireResultsTabs();
 }
 
+/**
+ * Estado del bloque de n8n en la tarjeta de Configuración. Sin webhook no se
+ * genera nada; sin plantilla o sin carpeta el flujo contesta 200 y falla adentro,
+ * que es justo el caso que costaba diagnosticar.
+ */
+function n8nResumenHtml(ajustes) {
+  const faltan = N8N_CAMPOS.filter((c) => !ajustes[c.key]);
+  if (faltan.length === 0) {
+    return `<div class="config-hint" style="margin:0;color:var(--green-dark)">● Configurado — el documento se genera al terminar la corrida.</div>`;
+  }
+  if (!ajustes.N8N_WEBHOOK_URL) {
+    return `<div class="config-hint" style="margin:0;color:var(--red-dark)">● Sin configurar — no se generará documentación.</div>`;
+  }
+  return `<div class="config-hint" style="margin:0;color:var(--red-dark)">● Incompleto — falta ${faltan.map((c) => c.label.toLowerCase()).join(', ')}.</div>`;
+}
+
+/** Modal con el bloque completo de n8n. Guarda todo de una y refresca la tarjeta. */
+function openN8nModal(ajustes) {
+  $overlay.hidden = false;
+  $overlay.innerHTML = `<div class="modal" style="width:600px;max-height:82vh;display:flex;flex-direction:column">
+    <div class="modal-pad" style="overflow:auto">
+      <div class="modal-title">Configurar n8n</div>
+      <div class="modal-sub">Estos valores se comparten entre todos los perfiles de este proyecto y se escriben en el <code>.env</code> cada vez que ejecutas.</div>
+      ${N8N_CAMPOS.map((c) => `
+        <label style="display:block;margin-top:14px;font-size:12px;font-weight:700">${c.label}</label>
+        <input id="n8n-${c.key}" type="text" value="${escapeHtml(ajustes[c.key] || '')}" placeholder="${escapeHtml(c.placeholder)}"
+               style="width:100%;margin-top:6px;padding:10px;border:1px solid #dbe3ef;border-radius:8px;box-sizing:border-box">
+        <div style="margin-top:4px;font-size:11px;color:#94a3b8">${c.help} <code style="font-size:10px">${c.key}</code></div>
+      `).join('')}
+      <div id="n8n-modal-error" style="display:none;margin-top:12px;color:#b91c1c;font-size:12px"></div>
+    </div>
+    <div class="modal-actions" style="padding:14px 20px;border-top:1px solid #eef2f7">
+      <button class="btn btn-secondary" id="n8n-modal-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="n8n-modal-save">Guardar</button>
+    </div>
+  </div>`;
+
+  document.getElementById('n8n-modal-cancel').onclick = () => closeModal();
+  document.getElementById('n8n-modal-save').onclick = async () => {
+    const valores = {};
+    N8N_CAMPOS.forEach((c) => { valores[c.key] = document.getElementById(`n8n-${c.key}`).value.trim(); });
+    const res = await api.setN8nSettings(state.project, valores);
+    if (!res || !res.ok) {
+      const err = document.getElementById('n8n-modal-error');
+      err.textContent = (res && res.error) || 'No fue posible guardar la configuración.';
+      err.style.display = 'block';
+      return;
+    }
+    closeModal();
+    if (state.screen === 'config') renderConfig();
+  };
+}
+
 async function renderConfig() {
   const cfg = await api.getProjectConfig(state.project);
   const serverUrl = await api.getServerUrl();
@@ -1863,12 +1982,10 @@ async function renderConfig() {
 
         <div class="config-section-title" style="margin-top:26px">Proyecto</div>
         <div class="card">
-          <div class="config-label">Documentación (n8n) — URL del webhook</div>
-          <div style="display:flex;gap:8px;margin-top:8px">
-            <input id="config-n8n" type="text" value="${escapeHtml(cfg.n8nWebhookUrl)}" placeholder="https://n8n.tu-servidor/webhook/..." style="flex:1;padding:10px;border:1px solid #dbe3ef;border-radius:8px;box-sizing:border-box">
-            <button class="btn btn-primary btn-sm" id="config-n8n-save">Guardar</button>
-          </div>
-          <div class="config-hint">Esta URL se usa para todos los perfiles de este proyecto. Si la dejas vacía, no se generará documentación.</div>
+          <div class="config-label">Documentación (n8n → Google Drive)</div>
+          <div id="config-n8n-resumen" style="margin-top:8px">${n8nResumenHtml(cfg.n8n || {})}</div>
+          <button class="btn btn-primary btn-sm" id="config-n8n-open" style="margin-top:12px">Configurar n8n…</button>
+          <div class="config-hint">Estos ajustes valen para todos los perfiles de este proyecto y se escriben en el <code>.env</code> al ejecutar. Tu nombre y tu cargo siguen siendo de cada perfil, porque firman el reporte.</div>
           <div id="config-n8n-status" class="config-hint" style="color:var(--green-dark)"></div>
         </div>
 
@@ -1929,12 +2046,7 @@ async function renderConfig() {
     status.textContent = 'Los proyectos nuevos se guardarán acá.';
   };
 
-  document.getElementById('config-n8n-save').onclick = async () => {
-    await api.setN8nUrl(state.project, document.getElementById('config-n8n').value);
-    const status = document.getElementById('config-n8n-status');
-    status.textContent = 'Guardado.';
-    setTimeout(() => { if (document.body.contains(status)) status.textContent = ''; }, 2500);
-  };
+  document.getElementById('config-n8n-open').onclick = () => openN8nModal(cfg.n8n || {});
 
   document.getElementById('config-server-save').onclick = async () => {
     const res = await api.setServerUrl(document.getElementById('config-server').value);
@@ -2356,6 +2468,10 @@ function createBrowserStub() {
       { key: 'TEST_PASSWORD', value: '', help: '' },
     ] }; },
     async saveProfile(_p, _id, values) { return { ok: true, profile: { id: 'demo', name: values.QA_NOMBRE || 'Demo', role: values.QA_CARGO || 'QA' } }; },
+    async getProjectConfig() { return { hasRepo: true, n8nWebhookUrl: 'https://n8n.demo/webhook/qa-report',
+      n8n: { N8N_WEBHOOK_URL: 'https://n8n.demo/webhook/qa-report', GOOGLE_TEMPLATE_DOC_ID: 'plantilla-demo',
+        AMBIENTE: 'Produccion', ERP_VERSION: '3.6.7_05' } }; },
+    async setN8nSettings(_p, ajustes) { return { ok: true, n8n: ajustes }; },
     async getGithubStatus() { return { connected: true, login: 'maria-gomez', name: 'María Gómez' }; },
     async connectGithub() { return { ok: true, account: { login: 'maria-gomez' } }; },
     async cancelGithubConnect() { return { ok: true }; },
@@ -2381,7 +2497,8 @@ function createBrowserStub() {
         finishedAt: new Date().toISOString(), durationMs: 42000, mode: 'conjunto',
         summary: { total: 3, passed: 2, failed: 1, skipped: 0 },
         tests: [{ id: 'a.spec.ts:1', name: 'login', status: 'failed', durationMs: 2100, error: 'timeout' }],
-        report: null, n8n: { sent: !!toN8n, ok: !!toN8n, at: null, error: null } } };
+        report: null, n8n: { sent: !!toN8n, ok: !!toN8n, at: null, docUrl: toN8n ? 'https://docs.google.com/document/d/demo123/edit' : null,
+          status: toN8n ? 200 : null, body: toN8n ? '[{\"status\":\"ok\",\"documentUrl\":\"https://docs.google.com/document/d/demo123/edit\"}]' : null, error: null } } };
     },
     async listResults() {
       return [{ id: 'run-1', projectId: 'demo', projectName: 'Demo', profileName: 'María Gómez',
@@ -2393,7 +2510,8 @@ function createBrowserStub() {
     async getResult(_p, runId) { return (await this.listResults())[0]; },
     async removeResult() { return { ok: true }; },
     async resultsMetrics(_p, ids) { const o = {}; ids.forEach((id) => o[id] = { runs: 3, failures: 1, failRate: 0.33, lastFailureAt: '2026-07-22T14:00:00Z', timeline: ['pass','fail','pass'], topError: { message: 'timeout', count: 1 } }); return o; },
-    async resendResultN8n() { return { ok: true, n8n: { sent: true, ok: true } }; },
+    async resendResultN8n() { return { ok: true, n8n: { sent: true, ok: true, docUrl: 'https://docs.google.com/document/d/demo123/edit',
+      status: 200, body: '[{\"status\":\"ok\",\"documentUrl\":\"https://docs.google.com/document/d/demo123/edit\"}]', error: null } }; },
     async openResultReport() {}, async openResultPlaywright() {}, async openResultFolder() {},
     async listRecordings() { return []; }, async recordingBaseUrl() { return ''; },
     async recordFlow() { return { ok: false }; }, async renameRecording() {},

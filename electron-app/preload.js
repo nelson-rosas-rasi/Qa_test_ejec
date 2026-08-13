@@ -50,7 +50,8 @@ contextBridge.exposeInMainWorld('qa', {
 
   // configuración del proyecto
   getProjectConfig: (projectId) => ipcRenderer.invoke('config:get', projectId),
-  setN8nUrl: (projectId, url) => ipcRenderer.invoke('config:setN8n', projectId, url),
+  /** Guarda el bloque entero de n8n del proyecto (ver N8N_KEYS en main). */
+  setN8nSettings: (projectId, ajustes) => ipcRenderer.invoke('config:setN8n', projectId, ajustes),
   openProjectFolder: (projectId) => ipcRenderer.invoke('projects:openFolder', projectId),
   getProjectsRoot: () => ipcRenderer.invoke('config:getProjectsRoot'),
   chooseProjectsRoot: () => ipcRenderer.invoke('config:chooseProjectsRoot'),

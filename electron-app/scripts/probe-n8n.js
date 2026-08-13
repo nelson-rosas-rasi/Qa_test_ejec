@@ -82,6 +82,7 @@ const valoresDelPerfil = {
   ERP_VERSION: process.env.ERP_VERSION,
   BASE_URL: process.env.BASE_URL,
   GOOGLE_TEMPLATE_DOC_ID: process.env.GOOGLE_TEMPLATE_DOC_ID,
+  GOOGLE_DRIVE_FOLDER_ID: process.env.GOOGLE_DRIVE_FOLDER_ID,
 };
 
 (async () => {
@@ -91,14 +92,15 @@ const valoresDelPerfil = {
 
   console.log(`POST ${url}`);
   console.log(`Registro: ${record.summary.total} pruebas, ${record.summary.passed} ok, ${record.summary.failed} fallidas`);
-  console.log(`Plantilla: ${payload.templateDocId || '(sin GOOGLE_TEMPLATE_DOC_ID en el entorno)'}\n`);
+  console.log(`Plantilla: ${payload.templateDocId || '(sin GOOGLE_TEMPLATE_DOC_ID en el entorno)'}`);
+  console.log(`Carpeta:   ${payload.driveFolderId || '(sin GOOGLE_DRIVE_FOLDER_ID en el entorno)'}\n`);
 
   const inicio = Date.now();
   const res = await notifyN8n(payload, { url });
   console.log(`Respondió en ${Date.now() - inicio} ms\n`);
 
   console.log('Lo que RunQA sella en record.n8n:');
-  console.log(JSON.stringify({ sent: true, at: res.at, ok: res.ok, docUrl: res.docUrl, error: res.error }, null, 2));
+  console.log(JSON.stringify({ sent: true, at: res.at, ok: res.ok, docUrl: res.docUrl, status: res.status, body: res.body, error: res.error }, null, 2));
 
   if (res.ok) {
     console.log(`\n✓ Documento generado: ${res.docUrl}`);

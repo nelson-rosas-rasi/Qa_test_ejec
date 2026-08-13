@@ -7,7 +7,7 @@ const { createConfigStore } = require('./config-store');
 const { readSchema, readExistingProfiles } = require('./profiles');
 const { createProfileStore } = require('./profiles/store');
 const { canRemoveProfile, nextActiveAfterSave } = require('./profiles/decide');
-const { withProjectN8n } = require('./profiles/n8n-env');
+const { N8N_ENV_KEY, N8N_KEYS, withProjectN8n, migrarAjustesN8n } = require('./profiles/n8n-env');
 const { writeEnv, sweep } = require('./profiles/materialize');
 const { createProjectManager, uniqueProjectId } = require('./projects');
 const { resolveProjectsRoot, knownRoots } = require('./projects-root');
@@ -125,8 +125,8 @@ function registerIpc(getWindow) {
     if (!project.repoPath || !fs.existsSync(project.repoPath)) return;
     sweep(project.repoPath);
     const values = project.profile ? profileStore.load(projectId, project.profile) : null;
-    // La URL de n8n es del proyecto (compartida por todos los perfiles): se inyecta aquí.
-    if (values) writeEnv({ repoPath: project.repoPath, id: project.profile, values: withProjectN8n(values, project.n8nWebhookUrl) });
+    // El bloque de n8n es del proyecto (compartido por todos los perfiles): se inyecta aquí.
+    if (values) writeEnv({ repoPath: project.repoPath, id: project.profile, values: withProjectN8n(values, migrarAjustesN8n(project)) });
   }
 
   /** Al arrancar y al cerrar: barre restos de .env en claro de todos los clones. */
@@ -155,18 +155,26 @@ function registerIpc(getWindow) {
     return project.repoPath;
   }
 
-  /** URL de n8n: ajuste de proyecto, compartido por todos los perfiles. */
+  /** Bloque de n8n: ajuste de proyecto, compartido por todos los perfiles. */
+  function ajustesN8n(projectId) {
+    return migrarAjustesN8n(store.getProject(projectId));
+  }
+
   function resolveN8nUrl(projectId) {
-    return store.getProject(projectId).n8nWebhookUrl || null;
+    return ajustesN8n(projectId)[N8N_ENV_KEY] || null;
   }
 
   /**
-   * Valores del `.env` del perfil con el que se corrió. El reporte de n8n saca de
-   * ahí la plantilla de Drive, el ambiente, la versión del ERP y el cargo del QA.
+   * Valores con los que se arma el reporte: los del perfil (quién firma) con el
+   * bloque del proyecto encima (plantilla, carpeta de Drive, ambiente, versión).
+   * El bloque manda porque es el que se materializa en el `.env` de la corrida.
    */
   function perfilDe(record) {
-    if (!record.profileId) return {};
-    try { return profileStore.load(record.projectId, record.profileId) || {}; } catch { return {}; }
+    let values = {};
+    if (record.profileId) {
+      try { values = profileStore.load(record.projectId, record.profileId) || {}; } catch { values = {}; }
+    }
+    return withProjectN8n(values, ajustesN8n(record.projectId));
   }
 
   /* ---------- proyectos ---------- */
@@ -415,16 +423,27 @@ function registerIpc(getWindow) {
   /* ---------- configuración del proyecto ---------- */
   ipcMain.handle('config:get', (_event, projectId) => {
     const project = store.getProject(projectId);
+    const n8n = migrarAjustesN8n(project);
     return {
-      n8nWebhookUrl: project.n8nWebhookUrl || '',
+      n8n,
+      n8nKeys: N8N_KEYS,
+      n8nWebhookUrl: n8n[N8N_ENV_KEY] || '',   // se conserva por comodidad del renderer
       hasRepo: !!(project.repoPath && fs.existsSync(project.repoPath)),
     };
   });
 
-  ipcMain.handle('config:setN8n', (_event, projectId, url) => {
-    const value = String(url || '').trim();
-    store.setProject(projectId, { n8nWebhookUrl: value });
-    return { ok: true, n8nWebhookUrl: value };
+  /**
+   * Guarda el bloque completo. Recibe un objeto con las claves de `N8N_KEYS`;
+   * `migrarAjustesN8n` recorta, descarta lo ajeno y deja fuera lo que quede en
+   * blanco, para que el `.env` no herede valores muertos.
+   */
+  ipcMain.handle('config:setN8n', (_event, projectId, ajustes) => {
+    // Compatibilidad: el renderer viejo mandaba la URL suelta como string.
+    const entrada = typeof ajustes === 'string' ? { [N8N_ENV_KEY]: ajustes } : (ajustes || {});
+    const n8n = migrarAjustesN8n({ n8n: entrada });
+    store.setProject(projectId, { n8n, n8nWebhookUrl: undefined });
+    materializeActive(projectId);   // el .env del perfil activo refleja el cambio ya
+    return { ok: true, n8n };
   });
 
   /* ---------- carpeta de proyectos ---------- */
@@ -510,7 +529,7 @@ function registerIpc(getWindow) {
         },
         tests: outcome.tests,
         report: null,
-        n8n: { sent: false, at: null, ok: null, docUrl: null, error: null },
+        n8n: { sent: false, at: null, ok: null, docUrl: null, status: null, body: null, error: null },
       };
       // Telemetría: TODA corrida se encola para el backend (el panel local solo
       // decide lo local). repoUrl es la clave de correlación; discardedByQa se
@@ -598,7 +617,7 @@ function registerIpc(getWindow) {
       const url = resolveN8nUrl(record.projectId);
       if (url) {
         const res = await notifyN8n(buildReportPayload(record, perfilDe(record)), { url });
-        record.n8n = { sent: true, at: res.at, ok: res.ok, docUrl: res.docUrl, error: res.error };
+        record.n8n = { sent: true, at: res.at, ok: res.ok, docUrl: res.docUrl, status: res.status, body: res.body, error: res.error };
       } else {
         n8nSkipped = true;   // pidió documentación pero no hay URL: se guarda local igual
       }
@@ -633,7 +652,7 @@ function registerIpc(getWindow) {
     const url = resolveN8nUrl(projectId);
     if (!url) return { ok: false, code: 'N8N_NOT_CONFIGURED', error: 'Configura la dirección para generar la documentación.' };
     const res = await notifyN8n(buildReportPayload(record, perfilDe(record)), { url });
-    record.n8n = { sent: true, at: res.at, ok: res.ok, docUrl: res.docUrl, error: res.error };
+    record.n8n = { sent: true, at: res.at, ok: res.ok, docUrl: res.docUrl, status: res.status, body: res.body, error: res.error };
     resultsStore.save(record);
     return { ok: res.ok, n8n: record.n8n };
   });

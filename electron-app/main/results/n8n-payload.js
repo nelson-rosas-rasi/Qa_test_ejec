@@ -114,6 +114,10 @@ function buildReportPayload(record, values = {}, opciones = {}) {
 
   return {
     templateDocId: values.GOOGLE_TEMPLATE_DOC_ID || '',
+    // Carpeta de Drive donde debe quedar el documento. `scripts/send-report.js`
+    // nunca la mandó (el flujo la tiene fija), así que viaja para que el nodo de
+    // Drive pueda leerla; hasta que se conecte allá, n8n la ignora sin romperse.
+    driveFolderId: values.GOOGLE_DRIVE_FOLDER_ID || '',
 
     informacionGeneral: {
       fechaEjecucion: fecha,
