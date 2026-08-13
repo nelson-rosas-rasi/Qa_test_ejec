@@ -16,6 +16,7 @@ const { runTests } = require('./playwright/run-tests');
 const { createResultsStore, deriveMode } = require('./results/store');
 const { testHistory } = require('./results/metrics');
 const { notifyN8n } = require('./results/notify-n8n');
+const { buildReportPayload } = require('./results/n8n-payload');
 const { buildReportTokens, reportFileName } = require('./results/report-data');
 const { fillTemplate, logoHtml } = require('./results/report-html');
 const { renderPdf } = require('./results/report-pdf');
@@ -147,6 +148,15 @@ function registerIpc(getWindow) {
   /** URL de n8n: ajuste de proyecto, compartido por todos los perfiles. */
   function resolveN8nUrl(projectId) {
     return store.getProject(projectId).n8nWebhookUrl || null;
+  }
+
+  /**
+   * Valores del `.env` del perfil con el que se corrió. El reporte de n8n saca de
+   * ahí la plantilla de Drive, el ambiente, la versión del ERP y el cargo del QA.
+   */
+  function perfilDe(record) {
+    if (!record.profileId) return {};
+    try { return profileStore.load(record.projectId, record.profileId) || {}; } catch { return {}; }
   }
 
   /* ---------- proyectos ---------- */
@@ -456,7 +466,7 @@ function registerIpc(getWindow) {
         },
         tests: outcome.tests,
         report: null,
-        n8n: { sent: false, at: null, ok: null, error: null },
+        n8n: { sent: false, at: null, ok: null, docUrl: null, error: null },
       };
       // Telemetría: TODA corrida se encola para el backend (el panel local solo
       // decide lo local). repoUrl es la clave de correlación; discardedByQa se
@@ -543,8 +553,8 @@ function registerIpc(getWindow) {
     if (toN8n) {
       const url = resolveN8nUrl(record.projectId);
       if (url) {
-        const res = await notifyN8n(record, { url });
-        record.n8n = { sent: true, at: res.at, ok: res.ok, error: res.error };
+        const res = await notifyN8n(buildReportPayload(record, perfilDe(record)), { url });
+        record.n8n = { sent: true, at: res.at, ok: res.ok, docUrl: res.docUrl, error: res.error };
       } else {
         n8nSkipped = true;   // pidió documentación pero no hay URL: se guarda local igual
       }
@@ -578,8 +588,8 @@ function registerIpc(getWindow) {
     if (!record) return { ok: false, code: 'RESULT_NOT_FOUND', error: 'No se encontró la corrida.' };
     const url = resolveN8nUrl(projectId);
     if (!url) return { ok: false, code: 'N8N_NOT_CONFIGURED', error: 'Configura la dirección para generar la documentación.' };
-    const res = await notifyN8n(record, { url });
-    record.n8n = { sent: true, at: res.at, ok: res.ok, error: res.error };
+    const res = await notifyN8n(buildReportPayload(record, perfilDe(record)), { url });
+    record.n8n = { sent: true, at: res.at, ok: res.ok, docUrl: res.docUrl, error: res.error };
     resultsStore.save(record);
     return { ok: res.ok, n8n: record.n8n };
   });

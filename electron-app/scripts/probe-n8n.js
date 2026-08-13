@@ -17,6 +17,7 @@
  */
 
 const { notifyN8n } = require('../main/results/notify-n8n');
+const { buildReportPayload } = require('../main/results/n8n-payload');
 
 const args = process.argv.slice(2);
 const verde = args.includes('--verde');
@@ -70,36 +71,37 @@ const record = {
 };
 
 /**
- * `notifyN8n` descarta el cuerpo de la respuesta — le alcanza con el `ok`. Acá se
- * envuelve el fetch global para leerlo sin mandar un segundo POST, que en n8n
- * sería un segundo documento.
+ * Los valores que el reporte saca del perfil se leen del entorno, con las mismas
+ * claves del `.env`:
+ *   set -a; . .env.Nelson_vid; set +a; npm run probe-n8n -- $N8N_WEBHOOK_URL
  */
-let respuesta = null;
-const fetchEspia = async (u, opts) => {
-  const res = await fetch(u, opts);
-  const texto = await res.clone().text().catch(() => '');
-  respuesta = { status: res.status, cuerpo: texto };
-  return res;
+const valoresDelPerfil = {
+  QA_NOMBRE: process.env.QA_NOMBRE,
+  QA_CARGO: process.env.QA_CARGO,
+  AMBIENTE: process.env.AMBIENTE,
+  ERP_VERSION: process.env.ERP_VERSION,
+  BASE_URL: process.env.BASE_URL,
+  GOOGLE_TEMPLATE_DOC_ID: process.env.GOOGLE_TEMPLATE_DOC_ID,
 };
 
 (async () => {
+  const payload = buildReportPayload(record, valoresDelPerfil, {
+    observaciones: 'Envío de prueba desde la sonda de RunQA.',
+  });
+
   console.log(`POST ${url}`);
-  console.log(`Registro: ${record.summary.total} pruebas, ${record.summary.passed} ok, ${record.summary.failed} fallidas\n`);
+  console.log(`Registro: ${record.summary.total} pruebas, ${record.summary.passed} ok, ${record.summary.failed} fallidas`);
+  console.log(`Plantilla: ${payload.templateDocId || '(sin GOOGLE_TEMPLATE_DOC_ID en el entorno)'}\n`);
 
   const inicio = Date.now();
-  const res = await notifyN8n(record, { url, fetchImpl: fetchEspia });
-  const ms = Date.now() - inicio;
+  const res = await notifyN8n(payload, { url });
+  console.log(`Respondió en ${Date.now() - inicio} ms\n`);
 
-  if (respuesta) {
-    console.log(`HTTP ${respuesta.status} en ${ms} ms`);
-    console.log(respuesta.cuerpo ? `Respuesta:\n${respuesta.cuerpo.slice(0, 2000)}\n` : 'Respuesta: (vacía)\n');
-  }
-
-  console.log('Lo que RunQA sellaría en record.n8n:');
-  console.log(JSON.stringify({ sent: true, at: res.at, ok: res.ok, error: res.error }, null, 2));
+  console.log('Lo que RunQA sella en record.n8n:');
+  console.log(JSON.stringify({ sent: true, at: res.at, ok: res.ok, docUrl: res.docUrl, error: res.error }, null, 2));
 
   if (res.ok) {
-    console.log('\n✓ El webhook aceptó el envío. Revisá en n8n que el documento se haya generado.');
+    console.log(`\n✓ Documento generado: ${res.docUrl}`);
   } else {
     console.log(`\n✗ Falló: ${res.error}`);
     console.log('  En RunQA esto deja la corrida guardada en local con el botón "Reenviar".');
