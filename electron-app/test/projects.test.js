@@ -308,8 +308,11 @@ test('un ejecutable de verdad no se invoca con shell', async () => {
     return { stdout: '', stderr: '' };
   };
   await createProjectManager({ projectsDir, run, npmPath: 'npm' }).importExisting({ id: 'local', sourcePath });
-  assert.notEqual(calls.find((call) => call.command === 'npm').options.shell, true);
-  assert.notEqual(calls.find((call) => call.command === 'git').options.shell, true);
+  // Buscar por comando exacto no sirve: en Windows `resolveCommand` devuelve la
+  // ruta absoluta ("C:\Program Files\Git\cmd\git.exe"), así que `find('git')` da
+  // undefined y el test se cae por una razón que no es la que mide.
+  assert.ok(calls.length > 0, 'se esperaba al menos una invocación');
+  assert.deepEqual(calls.filter((call) => call.options.shell === true), []);
 });
 
 test('remove borra el clon dentro de la carpeta administrada', () => {
