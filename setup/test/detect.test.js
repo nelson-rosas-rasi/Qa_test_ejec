@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { detectPrerequisites } = require('../main/detect');
+const { binaryPaths } = require('../main/paths');
 
 const ENV = { ProgramFiles: 'C:\\Program Files', LOCALAPPDATA: 'C:\\Users\\qa\\AppData\\Local' };
 const MINIMOS = { git: '2.30.0', node: '20.0.0' };
@@ -25,9 +26,9 @@ test('todo instalado devuelve ok y las versiones limpias', async () => {
     readMarker: () => ({ playwrightVersion: '1.58.2' }),
     readBrowsersDir: () => ['chromium-1208', 'firefox-1489', 'webkit-2140'],
   });
-  assert.deepEqual(state.git, { ok: true, version: '2.51.0' });
-  assert.deepEqual(state.node, { ok: true, version: '22.21.0' });
-  assert.deepEqual(state.npm, { ok: true, version: '10.9.0' });
+  assert.deepEqual(state.git, { ok: true, version: '2.51.0', desde: binaryPaths(ENV).git });
+  assert.deepEqual(state.node, { ok: true, version: '22.21.0', desde: binaryPaths(ENV).node });
+  assert.deepEqual(state.npm, { ok: true, version: '10.9.0', desde: binaryPaths(ENV).npm });
   assert.deepEqual(state.browsers, { ok: true, version: '1.58.2' });
 });
 
@@ -39,7 +40,7 @@ test('un binario que no está ni en la ruta fija ni en el PATH queda en falta', 
     playwrightVersion: '1.58.2',
     readMarker: () => ({ playwrightVersion: '1.58.2' }),
   });
-  assert.deepEqual(state.git, { ok: false, version: null });
+  assert.deepEqual(state.git, { ok: false, version: null, desde: null });
   assert.equal(state.node.ok, true);
 });
 
@@ -58,7 +59,7 @@ test('git instalado fuera de Archivos de programa se encuentra por PATH', async 
     playwrightVersion: '1.58.2',
     readMarker: () => ({ playwrightVersion: '1.58.2' }),
   });
-  assert.deepEqual(state.git, { ok: true, version: '2.43.0' });
+  assert.deepEqual(state.git, { ok: true, version: '2.43.0', desde: 'git' });
 });
 
 test('Node instalado en otro disco se encuentra por PATH, con su npm', async () => {
@@ -105,7 +106,7 @@ test('una versión más nueva que la fijada sirve y no se reinstala', async () =
     playwrightVersion: '1.58.2',
     readMarker: () => ({ playwrightVersion: '1.58.2' }),
   });
-  assert.deepEqual(state.node, { ok: true, version: '24.3.0' });
+  assert.deepEqual(state.node, { ok: true, version: '24.3.0', desde: binaryPaths(ENV).node });
 });
 
 test('compara por número y no por texto: 10.9.0 supera a 9.1.0', async () => {
@@ -128,7 +129,7 @@ test('un binario presente pero ilegible cuenta como falta', async () => {
     playwrightVersion: '1.58.2',
     readMarker: () => ({ playwrightVersion: '1.58.2' }),
   });
-  assert.deepEqual(state.node, { ok: false, version: null });
+  assert.deepEqual(state.node, { ok: false, version: null, desde: null });
 });
 
 test('navegadores de otra versión cuentan como falta', async () => {
@@ -181,4 +182,49 @@ test('sin marcador los navegadores cuentan como falta', async () => {
     readMarker: () => null,
   });
   assert.deepEqual(state.browsers, { ok: false, version: null });
+});
+
+test('informa desde dónde resolvió cada binario', async () => {
+  // Sin esto, un "node: falta" en el registro no distingue entre "no está" y
+  // "está, pero no para la cuenta que elevó el setup".
+  const state = await detectPrerequisites({
+    exists: () => true,
+    run: runFake,
+    env: ENV,
+    minimums: MINIMOS,
+    playwrightVersion: '1.58.2',
+    readMarker: () => ({ playwrightVersion: '1.58.2' }),
+    readBrowsersDir: () => ['chromium-1208'],
+  });
+  assert.equal(state.git.desde, binaryPaths(ENV).git);
+  assert.equal(state.node.desde, binaryPaths(ENV).node);
+});
+
+test('si la ruta fija no existe, informa que vino del PATH', async () => {
+  const soloPath = (cmd) => {
+    if (cmd.includes('Program Files')) throw new Error('no está ahí');
+    if (cmd === 'node') return Promise.resolve({ stdout: 'v22.21.0\n' });
+    throw new Error(`comando inesperado: ${cmd}`);
+  };
+  const state = await detectPrerequisites({
+    exists: () => false,
+    run: soloPath,
+    env: ENV,
+    minimums: MINIMOS,
+    playwrightVersion: '1.58.2',
+    readMarker: () => null,
+  });
+  assert.equal(state.node.desde, 'node');
+});
+
+test('lo que no se encuentra no reporta procedencia', async () => {
+  const state = await detectPrerequisites({
+    exists: () => false,
+    run: () => { throw new Error('no está'); },
+    env: ENV,
+    minimums: MINIMOS,
+    playwrightVersion: '1.58.2',
+    readMarker: () => null,
+  });
+  assert.equal(state.node.desde, null);
 });

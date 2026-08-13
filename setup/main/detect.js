@@ -76,11 +76,14 @@ async function probe({ exists, run, ruta, fallback, args, minVersion }) {
     const version = parseVersion(stdout);
     if (!version) continue;
     if (minVersion && compareVersions(version, minVersion) < 0) {
-      return { ok: false, version, reason: 'outdated', minVersion };
+      return { ok: false, version, reason: 'outdated', minVersion, desde: candidato };
     }
-    return { ok: true, version };
+    // `desde` no cambia ninguna decisión: existe para el registro. Un "node
+    // falta" no distingue entre "no está en el equipo" y "está, pero no para la
+    // cuenta que elevó el setup"; la procedencia sí.
+    return { ok: true, version, desde: candidato };
   }
-  return { ok: false, version: null };
+  return { ok: false, version: null, desde: null };
 }
 
 async function detectPrerequisites({

@@ -1,9 +1,11 @@
+const os = require('node:os');
 const path = require('node:path');
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const { detectPrerequisites } = require('./main/detect');
 const { buildInstallers } = require('./main/installers');
 const { createRunner } = require('./main/run');
 const { createLog } = require('./main/log');
+const { lineaDeDeteccion, lineaDeEntorno } = require('./main/diagnostico');
 const prerequisites = require('./prerequisites.json');
 
 let ventana = null;
@@ -24,13 +26,25 @@ app.whenReady().then(() => {
   const log = createLog(path.join(app.getPath('appData'), 'RunQA Setup'));
   const installers = buildInstallers({});
   let terminado = false;
+  // Con qué cuenta corre decide cómo se lee todo lo demás: elevar con
+  // credenciales ajenas cambia %ProgramFiles%, el PATH y %TEMP% que ve la
+  // detección. Va una sola vez, al abrir.
+  let usuario = null;
+  try { usuario = os.userInfo().username; } catch { usuario = null; }
+  log.write(lineaDeEntorno({ version: app.getVersion(), usuario, temp: os.tmpdir() }));
   const runner = createRunner({
-    detect: () => detectPrerequisites({
-      playwrightVersion: prerequisites.playwright.version,
-      // Los mínimos salen del mismo archivo que las descargas, para que subir la
-      // versión fijada no deje el piso viejo escondido en el código.
-      minimums: { git: prerequisites.git.minVersion, node: prerequisites.node.minVersion },
-    }),
+    // Cada vistazo al equipo queda registrado, no sólo los errores: sin esto un
+    // fallo del instalador no permite saber si el prerequisito ya estaba.
+    detect: async () => {
+      const estado = await detectPrerequisites({
+        playwrightVersion: prerequisites.playwright.version,
+        // Los mínimos salen del mismo archivo que las descargas, para que subir la
+        // versión fijada no deje el piso viejo escondido en el código.
+        minimums: { git: prerequisites.git.minVersion, node: prerequisites.node.minVersion },
+      });
+      log.write(lineaDeDeteccion(estado));
+      return estado;
+    },
     installers,
     publish: (estado) => {
       if (estado.error) log.write(`error en ${estado.current || 'un paso'}: ${estado.error}`);
