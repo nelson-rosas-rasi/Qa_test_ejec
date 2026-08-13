@@ -8,7 +8,27 @@ function fallo(code, message) {
   return err;
 }
 
+/**
+ * ¿Ya está bajado y sano? El sha256 de `prerequisites.json` es la única prueba
+ * que vale: un archivo con el nombre correcto puede ser una descarga cortada.
+ * Sin hash con qué comparar no se reutiliza nada.
+ */
+function yaDescargado(dest, sha256, verify) {
+  if (!verify || !sha256) return false;
+  try {
+    return crypto.createHash('sha256').update(fs.readFileSync(dest)).digest('hex') === sha256;
+  } catch {
+    return false;
+  }
+}
+
 async function downloadTo({ url, dest, sha256, onProgress = () => {}, fetchImpl = fetch, verify = true }) {
+  // Reintentar un paso no debería volver a bajar los mismos 30 MB: el caso real
+  // fue un QA con cuatro intentos seguidos sobre el MSI de Node.
+  if (yaDescargado(dest, sha256, verify)) {
+    onProgress(100);
+    return dest;
+  }
   let host;
   try {
     host = new URL(url).host;

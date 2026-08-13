@@ -74,3 +74,42 @@ test('con verify en false acepta el archivo sin hash conocido', async () => {
   const ruta = await downloadTo({ url: 'https://ejemplo/installer.exe', dest, sha256: null, verify: false, fetchImpl: fetchFake });
   assert.equal(ruta, dest);
 });
+
+test('un archivo ya descargado y verificado no se vuelve a bajar', async () => {
+  // El QA que reintenta cuatro veces bajaba cuatro veces los mismos 30 MB.
+  const dest = tempDest('archivo.bin');
+  fs.writeFileSync(dest, CONTENIDO);
+  let llamadas = 0;
+  const ruta = await downloadTo({
+    url: 'https://ejemplo/archivo.bin', dest, sha256: HASH,
+    fetchImpl: () => { llamadas += 1; return fetchFake(); },
+  });
+  assert.equal(ruta, dest);
+  assert.equal(llamadas, 0, 'no debería haber pedido nada a la red');
+});
+
+test('un archivo a medio bajar se descarta y se baja de nuevo', async () => {
+  const dest = tempDest('archivo.bin');
+  fs.writeFileSync(dest, Buffer.from('descarga cortada'));
+  let llamadas = 0;
+  await downloadTo({
+    url: 'https://ejemplo/archivo.bin', dest, sha256: HASH,
+    fetchImpl: () => { llamadas += 1; return fetchFake(); },
+  });
+  assert.equal(llamadas, 1);
+  assert.deepEqual(fs.readFileSync(dest), CONTENIDO);
+});
+
+test('sin hash con qué comparar, se baja igual', async () => {
+  // El instalador de RunQA no trae sha256 publicado: reutilizar un archivo que
+  // no se puede verificar sería confiar en su nombre, y el nombre no dice nada
+  // de su contenido.
+  const dest = tempDest('runqa.exe');
+  fs.writeFileSync(dest, CONTENIDO);
+  let llamadas = 0;
+  await downloadTo({
+    url: 'https://ejemplo/runqa.exe', dest, sha256: null, verify: false,
+    fetchImpl: () => { llamadas += 1; return fetchFake(); },
+  });
+  assert.equal(llamadas, 1);
+});
