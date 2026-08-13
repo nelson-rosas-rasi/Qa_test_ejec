@@ -10,6 +10,7 @@
     "version:minor": "npm version minor --no-git-tag-version",
     "version:major": "npm version major --no-git-tag-version",
     "release": "node scripts/check-release-config.js && electron-builder --publish always",
+    "probe-n8n": "node scripts/probe-n8n.js",
     "test": "node --test \"test/*.test.js\""
   },
   "author": "",
