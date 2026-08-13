@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld('qa', {
   getProjectConfig: (projectId) => ipcRenderer.invoke('config:get', projectId),
   setN8nUrl: (projectId, url) => ipcRenderer.invoke('config:setN8n', projectId, url),
   openProjectFolder: (projectId) => ipcRenderer.invoke('projects:openFolder', projectId),
+  getProjectsRoot: () => ipcRenderer.invoke('config:getProjectsRoot'),
+  chooseProjectsRoot: () => ipcRenderer.invoke('config:chooseProjectsRoot'),
 
   // grabaciones
   listRecordings: (projectId) => ipcRenderer.invoke('recordings:list', projectId),

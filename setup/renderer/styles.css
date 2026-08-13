@@ -37,4 +37,11 @@ button {
   background: var(--accent); color: #fff; font-size: 14px; cursor: pointer;
 }
 button.secundario { background: transparent; color: var(--tenue); }
+/* Cuando un paso falla, «Hacerlo a mano» deja de ser una opción secundaria: es
+   la única salida real, porque Reintentar corre el mismo comando. */
+button.secundario.destacado {
+  color: var(--texto);
+  border: 1px solid var(--accent);
+  background: rgba(59, 130, 246, .12);
+}
 button:disabled { opacity: .5; cursor: default; }

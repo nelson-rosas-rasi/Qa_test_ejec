@@ -10,6 +10,7 @@ const { canRemoveProfile, nextActiveAfterSave } = require('./profiles/decide');
 const { withProjectN8n } = require('./profiles/n8n-env');
 const { writeEnv, sweep } = require('./profiles/materialize');
 const { createProjectManager, uniqueProjectId } = require('./projects');
+const { resolveProjectsRoot, knownRoots } = require('./projects-root');
 const { locatePlaywrightCli } = require('./playwright/locate');
 const { listTests } = require('./playwright/list-tests');
 const { runTests } = require('./playwright/run-tests');
@@ -56,7 +57,16 @@ function registerIpc(getWindow) {
   // safeStorage sólo funciona tras app.whenReady(); registerIpc ya se llama ahí.
   const account = createAccountStore({ store, safeStorage });
   const auth = createGitAuth(() => account.load()?.token || null);
-  const projects = createProjectManager({ projectsDir: path.join(userData, 'projects'), auth });
+  // Dónde se clonan los proyectos lo elige el QA (Configuración). Se lee en cada
+  // uso, no al arrancar: cambiar la carpeta no puede exigir reiniciar la app.
+  // Las raíces anteriores se recuerdan porque cambiarla no mueve lo ya clonado.
+  const projectsRoot = () => resolveProjectsRoot({ configured: store.getSetting('projectsRoot'), userData });
+  const projectsRoots = () => knownRoots({
+    configured: store.getSetting('projectsRoot'),
+    userData,
+    previos: store.getSetting('projectsRootsPrevios') || [],
+  });
+  const projects = createProjectManager({ projectsDir: projectsRoot, managedRoots: projectsRoots, auth });
   const profileStore = createProfileStore({ dir: path.join(userData, 'perfiles'), safeStorage });
   const resultsStore = createResultsStore({ dir: path.join(userData, 'results') });
   const recordingsStore = createRecordingsStore({ dir: path.join(userData, 'grabaciones') });
@@ -415,6 +425,40 @@ function registerIpc(getWindow) {
     const value = String(url || '').trim();
     store.setProject(projectId, { n8nWebhookUrl: value });
     return { ok: true, n8nWebhookUrl: value };
+  });
+
+  /* ---------- carpeta de proyectos ---------- */
+  ipcMain.handle('config:getProjectsRoot', () => ({
+    path: projectsRoot(),
+    isDefault: !store.getSetting('projectsRoot'),
+  }));
+
+  /**
+   * Cambiar la carpeta **no mueve** lo ya clonado: los proyectos que existen se
+   * siguen administrando donde están (por eso la raíz vieja se guarda) y la
+   * nueva rige para los que se creen desde ahora.
+   */
+  ipcMain.handle('config:chooseProjectsRoot', async () => {
+    const result = await dialog.showOpenDialog(getWindow(), {
+      title: 'Carpeta donde se guardarán los proyectos',
+      properties: ['openDirectory', 'createDirectory'],
+      defaultPath: projectsRoot(),
+    });
+    if (result.canceled || !result.filePaths[0]) return { ok: false, canceled: true };
+    const elegida = result.filePaths[0];
+    try {
+      fs.mkdirSync(elegida, { recursive: true });
+      fs.accessSync(elegida, fs.constants.W_OK);
+    } catch {
+      return { ok: false, error: 'No se puede escribir en esa carpeta. Elegí otra.' };
+    }
+    const anterior = projectsRoot();
+    if (path.resolve(anterior) !== path.resolve(elegida)) {
+      const previos = store.getSetting('projectsRootsPrevios') || [];
+      store.setSetting('projectsRootsPrevios', [...new Set([...previos, anterior])]);
+      store.setSetting('projectsRoot', elegida);
+    }
+    return { ok: true, path: projectsRoot(), isDefault: false };
   });
 
   ipcMain.handle('projects:openFolder', async (_event, projectId) => {

@@ -437,3 +437,43 @@ test('sin ningún navegador en el perfil dice que faltan, no que están desaline
     );
   });
 });
+
+test('la carpeta de proyectos puede cambiar sin reiniciar la app', () => {
+  const primera = temp();
+  const segunda = temp();
+  let raiz = primera;
+  const manager = createProjectManager({ projectsDir: () => raiz, run: async () => ({ stdout: '', stderr: '' }) });
+  raiz = segunda;
+  const repoPath = path.join(segunda, 'erp');
+  fs.mkdirSync(path.join(repoPath, '.git'), { recursive: true });
+  manager.remove({ repoPath, repoUrl: 'x', defaultBranch: 'main' });
+  assert.equal(fs.existsSync(repoPath), false);
+});
+
+test('un proyecto de la carpeta anterior se sigue administrando tras mudar la raíz', () => {
+  // Cambiar de carpeta no mueve lo ya clonado. Si sólo se mirara la raíz nueva,
+  // el proyecto viejo quedaría sin poder actualizarse ni borrarse.
+  const vieja = temp();
+  const nueva = temp();
+  const repoPath = path.join(vieja, 'erp');
+  fs.mkdirSync(path.join(repoPath, '.git'), { recursive: true });
+  createProjectManager({
+    projectsDir: () => nueva,
+    managedRoots: () => [nueva, vieja],
+    run: async () => ({ stdout: '', stderr: '' }),
+  }).remove({ repoPath, repoUrl: 'x', defaultBranch: 'main' });
+  assert.equal(fs.existsSync(repoPath), false);
+});
+
+test('una carpeta ajena sigue estando fuera de alcance aunque haya varias raíces', () => {
+  const raiz = temp();
+  const ajena = temp();
+  const repoPath = path.join(ajena, 'erp');
+  fs.mkdirSync(path.join(repoPath, '.git'), { recursive: true });
+  assert.throws(
+    () => createProjectManager({ projectsDir: raiz, managedRoots: () => [raiz], run: async () => ({ stdout: '', stderr: '' }) })
+      .remove({ repoPath, repoUrl: 'x', defaultBranch: 'main' }),
+    /UNMANAGED_REPOSITORY|no está administrada/,
+  );
+  assert.equal(fs.existsSync(repoPath), true);
+});

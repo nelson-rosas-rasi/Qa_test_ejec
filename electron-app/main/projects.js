@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { appError } = require('./errors');
+const { isManaged } = require('./projects-root');
 const { resolveCommand } = require('./runtime/windows-paths');
 const { checkBrowsers } = require('./playwright/browsers');
 
@@ -40,10 +41,10 @@ function lockHash(repoPath) {
   return crypto.createHash('sha256').update(fs.readFileSync(lockPath)).digest('hex');
 }
 
-function validateManagedPath(repoPath, projectsDir) {
-  const root = path.resolve(projectsDir) + path.sep;
-  const candidate = path.resolve(repoPath) + path.sep;
-  if (!candidate.startsWith(root)) throw appError('UNMANAGED_REPOSITORY', 'La carpeta del proyecto no está administrada por QA Test Runner.');
+/** Acepta una raíz o varias: al cambiar de carpeta, las anteriores siguen valiendo. */
+function validateManagedPath(repoPath, roots) {
+  const lista = Array.isArray(roots) ? roots : [roots];
+  if (!isManaged(repoPath, lista)) throw appError('UNMANAGED_REPOSITORY', 'La carpeta del proyecto no está administrada por QA Test Runner.');
 }
 
 /**
@@ -86,11 +87,17 @@ const quoteForShell = (command) => (command.includes(' ') ? `"${command}"` : com
 
 function createProjectManager({
   projectsDir,
+  managedRoots,
   gitPath = resolveCommand('git'),
   npmPath = resolveCommand(process.platform === 'win32' ? 'npm.cmd' : 'npm'),
   run = runFile,
   auth = NO_AUTH,
 }) {
+  // La carpeta puede llegar como función: el QA la cambia en Configuración y el
+  // cambio tiene que valer sin reiniciar la app.
+  const dir = () => (typeof projectsDir === 'function' ? projectsDir() : projectsDir);
+  const roots = () => (managedRoots ? managedRoots() : [dir()]);
+
   const git = (args, cwd) => run(gitPath, [...auth.args(), ...args], {
     ...(cwd ? { cwd } : {}),
     env: { ...process.env, ...auth.env() },
@@ -133,8 +140,8 @@ function createProjectManager({
       if (err.code === 'DEFAULT_BRANCH_NOT_FOUND') throw err;
       throw friendlyCommandError('REPOSITORY_UNAVAILABLE', 'No fue posible acceder al repositorio.', err);
     }
-    fs.mkdirSync(projectsDir, { recursive: true });
-    const repoPath = path.join(projectsDir, id);
+    fs.mkdirSync(dir(), { recursive: true });
+    const repoPath = path.join(dir(), id);
     if (fs.existsSync(repoPath)) throw appError('PROJECT_FOLDER_EXISTS', 'Ya existe una carpeta administrada para este proyecto.');
     try {
       await git(['clone', '--origin', 'origin', '--branch', defaultBranch, '--single-branch', repoUrl.trim(), repoPath]);
@@ -168,8 +175,8 @@ function createProjectManager({
       throw friendlyCommandError('LOCAL_REPOSITORY_INVALID', 'No fue posible determinar la rama activa de la carpeta seleccionada.', err);
     }
     const name = path.basename(localPath);
-    fs.mkdirSync(projectsDir, { recursive: true });
-    const repoPath = path.join(projectsDir, id);
+    fs.mkdirSync(dir(), { recursive: true });
+    const repoPath = path.join(dir(), id);
     if (fs.existsSync(repoPath)) throw appError('PROJECT_FOLDER_EXISTS', 'Ya existe una carpeta administrada para este proyecto.');
     try {
       await git(['clone', '--branch', defaultBranch, '--single-branch', localPath, repoPath]);
@@ -186,7 +193,7 @@ function createProjectManager({
   }
   async function prepare(project) {
     if (!project?.repoPath || !project?.repoUrl || !project?.defaultBranch) throw appError('PROJECT_NOT_INITIALIZED', 'El proyecto no está inicializado correctamente.');
-    validateManagedPath(project.repoPath, projectsDir);
+    validateManagedPath(project.repoPath, roots());
     if (!fs.existsSync(path.join(project.repoPath, '.git'))) throw appError('REPOSITORY_NOT_FOUND', 'No se encontró el repositorio local. Inicializa nuevamente el proyecto.');
     try {
       const defaultBranch = parseDefaultBranch((await git(['ls-remote', '--symref', project.repoUrl, 'HEAD'])).stdout);
@@ -212,7 +219,7 @@ function createProjectManager({
    */
   async function checkStatus(project) {
     if (!project?.repoPath || !project?.repoUrl || !project?.defaultBranch) throw appError('PROJECT_NOT_INITIALIZED', 'El proyecto no está inicializado correctamente.');
-    validateManagedPath(project.repoPath, projectsDir);
+    validateManagedPath(project.repoPath, roots());
     if (!fs.existsSync(path.join(project.repoPath, '.git'))) throw appError('REPOSITORY_NOT_FOUND', 'No se encontró el repositorio local. Inicializa nuevamente el proyecto.');
     const branch = project.defaultBranch;
     try {
@@ -229,7 +236,7 @@ function createProjectManager({
 
   function remove(project) {
     if (!project?.repoPath) throw appError('PROJECT_NOT_INITIALIZED', 'El proyecto no está inicializado correctamente.');
-    validateManagedPath(project.repoPath, projectsDir);
+    validateManagedPath(project.repoPath, roots());
     fs.rmSync(project.repoPath, { recursive: true, force: true });
   }
 

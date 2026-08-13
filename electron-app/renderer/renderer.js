@@ -1833,6 +1833,7 @@ async function renderResultsMetrics() {
 async function renderConfig() {
   const cfg = await api.getProjectConfig(state.project);
   const serverUrl = await api.getServerUrl();
+  const raiz = await api.getProjectsRoot();
   const profiles = state.profiles;
   const active = state.profile;
 
@@ -1846,6 +1847,19 @@ async function renderConfig() {
         <div class="config-section-title">Perfiles</div>
         <div class="card" id="config-profiles"></div>
         <button class="btn btn-secondary btn-sm" id="config-add-profile" style="margin-top:12px">+ Añadir perfil</button>
+
+        <div class="config-section-title" style="margin-top:26px">Carpeta de los proyectos</div>
+        <div class="card">
+          <div class="config-label">Dónde se guardan los proyectos de este equipo</div>
+          <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+            <input id="config-root" type="text" value="${escapeHtml(raiz.path)}" readonly
+              style="flex:1;padding:10px;border:1px solid #dbe3ef;border-radius:8px;box-sizing:border-box;background:#f7f9fc">
+            <button class="btn btn-secondary btn-sm" id="config-root-change">Cambiar…</button>
+          </div>
+          <div class="config-hint">Acá se clonan los repositorios y sus dependencias, que ocupan varios GB. Podés llevarlos a otro disco.${raiz.isDefault ? ' Hoy usa la carpeta por defecto de la aplicación.' : ''}</div>
+          <div class="config-hint">Cambiarla <strong>no mueve</strong> los proyectos que ya existen: esos siguen funcionando donde están, y la carpeta nueva se usa para los que agregues desde ahora.</div>
+          <div id="config-root-status" class="config-hint" style="color:var(--green-dark)"></div>
+        </div>
 
         <div class="config-section-title" style="margin-top:26px">Proyecto</div>
         <div class="card">
@@ -1900,6 +1914,20 @@ async function renderConfig() {
   }
 
   document.getElementById('config-add-profile').onclick = () => openProfileModal();
+
+  document.getElementById('config-root-change').onclick = async () => {
+    const res = await api.chooseProjectsRoot();
+    if (res.canceled) return;
+    const status = document.getElementById('config-root-status');
+    if (!res.ok) {
+      status.style.color = 'var(--red-dark)';
+      status.textContent = res.error || 'No se pudo cambiar la carpeta.';
+      return;
+    }
+    document.getElementById('config-root').value = res.path;
+    status.style.color = 'var(--green-dark)';
+    status.textContent = 'Los proyectos nuevos se guardarán acá.';
+  };
 
   document.getElementById('config-n8n-save').onclick = async () => {
     await api.setN8nUrl(state.project, document.getElementById('config-n8n').value);
@@ -2386,6 +2414,8 @@ function createBrowserStub() {
     },
     onOpenAssignmentDate() {},
     async getServerUrl() { return 'https://reportras-backe.onrender.com'; },
+    async getProjectsRoot() { return { path: 'C:\\Users\\qa\\AppData\\Roaming\\RunQA\\projects', isDefault: true }; },
+    async chooseProjectsRoot() { return { ok: true, path: 'D:\\RunQA\\proyectos', isDefault: false }; },
     async setServerUrl() { return { ok: true, serverUrl: 'https://reportras-backe.onrender.com' }; },
     async discardResult() { return { ok: true }; },
     onServerPending() {},

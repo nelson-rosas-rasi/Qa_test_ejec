@@ -1,11 +1,14 @@
+const fs = require('node:fs');
 const os = require('node:os');
+const { spawn } = require('node:child_process');
 const path = require('node:path');
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const { detectPrerequisites } = require('./main/detect');
-const { buildInstallers } = require('./main/installers');
+const { buildInstallers, OWNER, REPO } = require('./main/installers');
 const { createRunner } = require('./main/run');
 const { createLog } = require('./main/log');
 const { lineaDeDeteccion, lineaDeEntorno } = require('./main/diagnostico');
+const { guionManual } = require('./main/manual');
 const prerequisites = require('./prerequisites.json');
 
 let ventana = null;
@@ -61,6 +64,33 @@ app.whenReady().then(() => {
     if (terminado) app.quit();
   });
   ipcMain.handle('setup:retry', (_e, id) => runner.retry(id));
+
+  /**
+   * Modo manual: escribe el guion en %TEMP% y abre una consola parada ahí, que
+   * hereda el administrador que este proceso ya tiene. El setup no espera nada
+   * de ella: el QA vuelve y toca Verificar.
+   */
+  ipcMain.handle('setup:manual', (_e, steps) => {
+    const temp = os.tmpdir();
+    const guion = guionManual({
+      steps: steps || [],
+      temp,
+      prerequisites,
+      releasesUrl: `https://github.com/${OWNER}/${REPO}/releases`,
+    });
+    const archivo = path.join(temp, 'runqa-instalar-a-mano.cmd');
+    try {
+      // UTF-8 para que case con el `chcp 65001` del guion: una ruta con tilde
+      // (C:\Users\José\...) escrita en otra página de códigos sale ilegible.
+      fs.writeFileSync(archivo, guion, 'utf8');
+      spawn('cmd.exe', ['/K', archivo], { cwd: temp, detached: true, stdio: 'ignore', windowsHide: false }).unref();
+      log.write(`modo manual abierto: ${archivo}`);
+      return { ok: true, archivo };
+    } catch (err) {
+      log.write(`no se pudo abrir el modo manual: ${err.message}`);
+      return { ok: false, error: err.message };
+    }
+  });
   ipcMain.handle('setup:openLog', () => shell.openPath(log.file));
 
   crearVentana();
